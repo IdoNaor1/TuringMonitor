@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir /s \"C:\\\\Users\\\\Ido\\\\AppData\\\\Local\\\\Programs\\\\TuringMonitor\")",
+      "Bash(dir:*)",
+      "Bash(findstr:*)",
+      "Bash(python -m venv:*)",
+      "Bash(.venv/Scripts/pip:*)",
+      "Bash(.venv/Scripts/python:*)",
+      "Bash(ls:*)",
+      "Bash(.venv/Scripts/pyinstaller:*)",
+      "Bash(.venvScriptspyinstaller --onefile --windowed --name TuringControlCenter --add-data \"layouts;layouts\" gui_app.py)",
+      "Bash(\".venv/Scripts/pyinstaller.exe\" --onefile --windowed --name TuringControlCenter --add-data \"layouts;layouts\" gui_app.py)",
+      "Bash(\".venv/Scripts/pyinstaller.exe\" --clean --onefile --windowed --name TuringControlCenter --add-data \"layouts;layouts\" gui_app.py)",
+      "Bash(\".venv/Scripts/pyinstaller.exe\" --clean TuringControlCenter.spec)",
+      "Bash(taskkill:*)",
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(\".venv/Scripts/pyinstaller.exe\" TuringControlCenter.spec)",
+      "mcp__Desktop_Commander__list_directory",
+      "mcp__Desktop_Commander__read_file",
+      "Bash(python monitor.py:*)",
+      "Bash(.venvScriptspython.exe monitor.py)",
+      "Bash(\".venv/Scripts/pip.exe\" install GPUtil)",
+      "Bash(\".venv/Scripts/pyinstaller.exe\" TuringControlCenter.spec --clean)",
+      "Bash(\".venv/Scripts/pip.exe\" install pystray)",
+      "Bash(.venvScriptspython.exe gui_app.py)",
+      "Bash(python gui_app.py:*)"
+    ]
+  }
+}

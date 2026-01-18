@@ -1,0 +1,55 @@
+{
+  "name": "Minimal Layout",
+  "display": {
+    "width": 320,
+    "height": 480,
+    "background_color": "#000000"
+  },
+  "update_interval_ms": 1000,
+  "widgets": [
+    {
+      "type": "text",
+      "id": "clock",
+      "position": {"x": 10, "y": 20},
+      "size": {"width": 300, "height": 80},
+      "data_source": "time",
+      "format": "%H:%M:%S",
+      "font_size": 48,
+      "color": "#FFFFFF",
+      "align": "center"
+    },
+    {
+      "type": "text",
+      "id": "date",
+      "position": {"x": 10, "y": 105},
+      "size": {"width": 300, "height": 25},
+      "data_source": "date",
+      "format": "%a, %b %d",
+      "font_size": 16,
+      "color": "#AAAAAA",
+      "align": "center"
+    },
+    {
+      "type": "progress_bar",
+      "id": "cpu",
+      "position": {"x": 10, "y": 150},
+      "size": {"width": 300, "height": 100},
+      "data_source": "cpu_percent",
+      "label": "CPU",
+      "bar_color": "#00FF00",
+      "background_color": "#222222",
+      "text_color": "#FFFFFF"
+    },
+    {
+      "type": "progress_bar",
+      "id": "disk",
+      "position": {"x": 10, "y": 265},
+      "size": {"width": 300, "height": 80},
+      "data_source": "disk_c_percent",
+      "label": "C: Drive",
+      "bar_color": "#FFA500",
+      "background_color": "#222222",
+      "text_color": "#FFFFFF"
+    }
+  ]
+}

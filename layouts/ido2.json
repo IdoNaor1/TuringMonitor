@@ -1,0 +1,113 @@
+{
+  "name": "Ido2",
+  "display": {
+    "width": 320,
+    "height": 480,
+    "background_color": "#0A0A0A"
+  },
+  "update_interval_ms": 1000,
+  "widgets": [
+    {
+      "type": "text",
+      "id": "clock",
+      "position": {
+        "x": 10,
+        "y": 20
+      },
+      "size": {
+        "width": 300,
+        "height": 70
+      },
+      "data_source": "time",
+      "format": "%H:%M:%S",
+      "font_size": 48,
+      "color": "#00FFFF",
+      "align": "center"
+    },
+    {
+      "type": "text",
+      "id": "date",
+      "position": {
+        "x": 10,
+        "y": 95
+      },
+      "size": {
+        "width": 300,
+        "height": 25
+      },
+      "data_source": "date",
+      "format": "%a, %b %d",
+      "font_size": 16,
+      "color": "#00FFFF",
+      "align": "center"
+    },
+    {
+      "type": "progress_bar",
+      "id": "cpu",
+      "position": {
+        "x": 10,
+        "y": 130
+      },
+      "size": {
+        "width": 300,
+        "height": 80
+      },
+      "data_source": "cpu_percent",
+      "label": "CPU",
+      "bar_color": "#FF00FF",
+      "background_color": "#1A1A1A",
+      "text_color": "#00FFFF"
+    },
+    {
+      "type": "progress_bar",
+      "id": "ram",
+      "position": {
+        "x": 10,
+        "y": 220
+      },
+      "size": {
+        "width": 300,
+        "height": 80
+      },
+      "data_source": "ram_percent",
+      "label": "RAM",
+      "bar_color": "#00FF00",
+      "background_color": "#1A1A1A",
+      "text_color": "#00FFFF"
+    },
+    {
+      "type": "progress_bar",
+      "id": "disk",
+      "position": {
+        "x": 10,
+        "y": 310
+      },
+      "size": {
+        "width": 300,
+        "height": 80
+      },
+      "data_source": "disk_c_percent",
+      "label": "C: Drive",
+      "bar_color": "#FFFF00",
+      "background_color": "#1A1A1A",
+      "text_color": "#00FFFF"
+    },
+    {
+      "type": "progress_bar",
+      "id": "gpu",
+      "position": {
+        "x": 10,
+        "y": 400
+      },
+      "size": {
+        "width": 300,
+        "height": 70
+      },
+      "data_source": "gpu_percent",
+      "label": "GPU",
+      "bar_color": "#FF6600",
+      "background_color": "#1A1A1A",
+      "text_color": "#00FFFF"
+    }
+  ]
+}

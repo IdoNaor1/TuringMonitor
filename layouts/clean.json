@@ -1,0 +1,77 @@
+{
+  "name": "Clean White Layout",
+  "display": {
+    "width": 320,
+    "height": 480,
+    "background_color": "#FFFFFF"
+  },
+  "update_interval_ms": 1000,
+  "widgets": [
+    {
+      "type": "text",
+      "id": "clock",
+      "position": {"x": 10, "y": 30},
+      "size": {"width": 300, "height": 60},
+      "data_source": "time",
+      "format": "%H:%M:%S",
+      "font_size": 42,
+      "color": "#000000",
+      "align": "center"
+    },
+    {
+      "type": "text",
+      "id": "date",
+      "position": {"x": 10, "y": 95},
+      "size": {"width": 300, "height": 25},
+      "data_source": "date",
+      "format": "%a, %b %d",
+      "font_size": 16,
+      "color": "#666666",
+      "align": "center"
+    },
+    {
+      "type": "progress_bar",
+      "id": "cpu",
+      "position": {"x": 10, "y": 130},
+      "size": {"width": 300, "height": 80},
+      "data_source": "cpu_percent",
+      "label": "CPU",
+      "bar_color": "#2196F3",
+      "background_color": "#E0E0E0",
+      "text_color": "#000000"
+    },
+    {
+      "type": "progress_bar",
+      "id": "ram",
+      "position": {"x": 10, "y": 220},
+      "size": {"width": 300, "height": 80},
+      "data_source": "ram_percent",
+      "label": "RAM",
+      "bar_color": "#4CAF50",
+      "background_color": "#E0E0E0",
+      "text_color": "#000000"
+    },
+    {
+      "type": "progress_bar",
+      "id": "disk",
+      "position": {"x": 10, "y": 310},
+      "size": {"width": 300, "height": 80},
+      "data_source": "disk_c_percent",
+      "label": "C: Drive",
+      "bar_color": "#FF9800",
+      "background_color": "#E0E0E0",
+      "text_color": "#000000"
+    },
+    {
+      "type": "progress_bar",
+      "id": "gpu",
+      "position": {"x": 10, "y": 400},
+      "size": {"width": 300, "height": 70},
+      "data_source": "gpu_percent",
+      "label": "GPU",
+      "bar_color": "#9C27B0",
+      "background_color": "#E0E0E0",
+      "text_color": "#000000"
+    }
+  ]
+}
