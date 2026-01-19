@@ -29,15 +29,17 @@
       "id": "date",
       "position": {
         "x": 10,
-        "y": 95
+        "y": 89
       },
       "size": {
         "width": 300,
         "height": 25
       },
       "data_source": "date",
-      "format": "%a, %b %d",
-      "font_size": 16,
+      "font_size": 19,
+      "font_family": "arial",
+      "bold": false,
+      "italic": true,
       "color": "#00FFFF",
       "align": "center"
     },
@@ -54,7 +56,7 @@
       },
       "data_source": "cpu_percent",
       "label": "CPU",
-      "bar_color": "#FF00FF",
+      "bar_color": "#35ffff",
       "background_color": "#1A1A1A",
       "text_color": "#00FFFF",
       "gradient": false,
@@ -78,7 +80,7 @@
       },
       "data_source": "ram_percent",
       "label": "RAM",
-      "bar_color": "#00FF00",
+      "bar_color": "#35ffff",
       "background_color": "#1A1A1A",
       "text_color": "#00FFFF",
       "gradient": false,
@@ -102,7 +104,7 @@
       },
       "data_source": "disk_c_percent",
       "label": "C: Drive",
-      "bar_color": "#FFFF00",
+      "bar_color": "#35ffff",
       "background_color": "#1A1A1A",
       "text_color": "#00FFFF",
       "gradient": false,
@@ -126,7 +128,7 @@
       },
       "data_source": "gpu_percent",
       "label": "GPU",
-      "bar_color": "#FF6600",
+      "bar_color": "#35ffff",
       "background_color": "#1A1A1A",
       "text_color": "#00FFFF",
       "gradient": false,

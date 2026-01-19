@@ -262,6 +262,9 @@ class TextWidget(Widget):
         # Format temperature values with °C
         if 'temp' in data_source.lower() and isinstance(value, (int, float)):
             text = f"{value:.0f}°C"
+        # Format disk data with GB and 2 decimal places
+        elif data_source in ['disk_c_used', 'disk_c_total'] and isinstance(value, (int, float)):
+            text = f"{value:.2f} GB"
         else:
             text = str(value)
 

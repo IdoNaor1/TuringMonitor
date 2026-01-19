@@ -132,6 +132,58 @@ def get_cpu_name():
         return "Unknown CPU"
 
 
+def get_cpu_temp_from_libre_hardware_monitor():
+    """
+    Get CPU temperature from LibreHardwareMonitor web server
+    
+    Returns:
+        float: CPU temperature in Celsius, or 0 if not available
+    """
+    try:
+        import urllib.request
+        import json
+        
+        # Try to fetch from LibreHardwareMonitor web server
+        url = "http://localhost:8085/data.json"
+        with urllib.request.urlopen(url, timeout=1) as response:
+            data = json.loads(response.read().decode())
+            
+            # Recursively search for CPU temperature
+            def find_cpu_temp(node):
+                text = node.get('Text', '')
+                
+                # Check if this is a CPU node (Intel or AMD)
+                if ('Intel Core' in text or 'AMD Ryzen' in text or 'AMD EPYC' in text) and 'intelcpu' in node.get('HardwareId', '').lower() or 'amdcpu' in node.get('HardwareId', '').lower():
+                    # Found the CPU, now look for temperatures
+                    for child in node.get('Children', []):
+                        if 'Temperature' in child.get('Text', ''):
+                            # Found temperatures section
+                            for temp_sensor in child.get('Children', []):
+                                sensor_text = temp_sensor.get('Text', '')
+                                # Look for CPU Package or Core Average (prefer Package)
+                                if 'CPU Package' in sensor_text or 'Package' in sensor_text:
+                                    value_str = temp_sensor.get('Value', '0.0 °C')
+                                    temp = float(value_str.replace('°C', '').replace('°', '').strip())
+                                    return temp
+                                elif 'Core Average' in sensor_text or 'Average' in sensor_text:
+                                    value_str = temp_sensor.get('Value', '0.0 °C')
+                                    temp = float(value_str.replace('°C', '').replace('°', '').strip())
+                                    return temp
+                
+                # Recursively search children
+                for child in node.get('Children', []):
+                    result = find_cpu_temp(child)
+                    if result > 0:
+                        return result
+                return 0
+            
+            return find_cpu_temp(data)
+    except Exception as e:
+        # Silently fail
+        pass
+    return 0
+
+
 def get_component_temperatures():
     """
     Get all available temperature sensors
@@ -464,11 +516,47 @@ def get_all_metrics():
 
     # Add CPU temperature if available
     cpu_temp = 0
-    for key, value in temps.items():
-        # Look for CPU temperature sensors (varies by platform)
-        if any(keyword in key.lower() for keyword in ['coretemp', 'cpu', 'k10temp', 'zenpower']):
-            cpu_temp = value
-            break
+    
+    # Try LibreHardwareMonitor web server first (most reliable on Windows)
+    cpu_temp = get_cpu_temp_from_libre_hardware_monitor()
+    
+    # If that didn't work, try psutil sensors (Linux/Mac)
+    if cpu_temp == 0:
+        for key, value in temps.items():
+            # Look for CPU temperature sensors (varies by platform)
+            if any(keyword in key.lower() for keyword in ['coretemp', 'cpu', 'k10temp', 'zenpower']):
+                cpu_temp = value
+                break
+    
+    # Last resort: try WMI methods (rarely work)
+    if cpu_temp == 0:
+        try:
+            import wmi
+            # Try OpenHardwareMonitor namespace
+            try:
+                w = wmi.WMI(namespace="root\\OpenHardwareMonitor")
+                temperature_infos = w.Sensor()
+                for sensor in temperature_infos:
+                    if sensor.SensorType == 'Temperature' and 'CPU' in sensor.Name:
+                        cpu_temp = float(sensor.Value)
+                        break
+            except:
+                pass
+            
+            # Try LibreHardwareMonitor namespace
+            if cpu_temp == 0:
+                try:
+                    w = wmi.WMI(namespace="root\\LibreHardwareMonitor")
+                    temperature_infos = w.Sensor()
+                    for sensor in temperature_infos:
+                        if sensor.SensorType == 'Temperature' and 'CPU' in sensor.Name:
+                            cpu_temp = float(sensor.Value)
+                            break
+                except:
+                    pass
+        except:
+            pass
+    
     metrics['cpu_temp'] = cpu_temp
 
     # Expose all temperature sensors as data sources
