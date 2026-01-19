@@ -72,42 +72,122 @@ def get_disk_usage():
 
 def get_gpu_usage():
     """
-    Get GPU usage information (NVIDIA GPUs only)
+    Get GPU usage information from LibreHardwareMonitor
 
     Returns:
         dict or None: Dictionary containing GPU metrics if available:
             - gpu_percent: GPU usage percentage (0-100)
             - gpu_memory_percent: GPU memory usage percentage (0-100)
             - gpu_temp: GPU temperature in Celsius
+            - gpu_hotspot_temp: GPU hot spot temperature in Celsius (if available)
             - gpu_name: GPU model name
-        Returns None if no GPU available or GPUtil not installed
+            - gpu_clock: GPU core clock in MHz (if available)
+            - gpu_memory_clock: GPU memory clock in MHz (if available)
+            - gpu_power: GPU power consumption in Watts (if available)
+            - gpu_memory_used: GPU memory used in MB (if available)
+            - gpu_memory_total: GPU memory total in MB (if available)
+        Returns None if no GPU data available
     """
     try:
-        # Suppress console windows on Windows when GPUtil spawns subprocesses
-        import sys
-        if sys.platform == 'win32':
-            import subprocess
-            # Store original CREATE_NO_WINDOW flag
-            CREATE_NO_WINDOW = 0x08000000
-            # Monkey-patch subprocess to hide console windows
-            old_popen = subprocess.Popen.__init__
-            def new_popen(self, *args, **kwargs):
-                kwargs.setdefault('creationflags', 0)
-                kwargs['creationflags'] |= CREATE_NO_WINDOW
-                old_popen(self, *args, **kwargs)
-            subprocess.Popen.__init__ = new_popen
-
-        import GPUtil
-        gpus = GPUtil.getGPUs()
-        if gpus:
-            gpu = gpus[0]  # Primary GPU
-            return {
-                'gpu_percent': gpu.load * 100,
-                'gpu_memory_percent': gpu.memoryUtil * 100,
-                'gpu_temp': gpu.temperature,
-                'gpu_name': gpu.name
-            }
-    except (ImportError, Exception):
+        import urllib.request
+        import json
+        
+        # Try to fetch from LibreHardwareMonitor web server
+        url = "http://localhost:8085/data.json"
+        with urllib.request.urlopen(url, timeout=1) as response:
+            data = json.loads(response.read().decode())
+            
+            # Recursively search for GPU data
+            def find_gpu_data(node):
+                text = node.get('Text', '')
+                hardware_id = node.get('HardwareId', '').lower()
+                
+                # Check if this is a GPU node (NVIDIA or AMD)
+                if ('nvidia' in text.lower() or 'geforce' in text.lower() or 'rtx' in text.lower() or 
+                    'radeon' in text.lower() or 'amd' in text.lower()) and \
+                   ('gpu-nvidia' in hardware_id or 'gpu-amd' in hardware_id or 'gpu-intel' in hardware_id):
+                    
+                    gpu_data = {'gpu_name': text}
+                    
+                    # Parse all children to extract metrics
+                    for child in node.get('Children', []):
+                        child_text = child.get('Text', '')
+                        
+                        # Temperatures
+                        if 'Temperature' in child_text:
+                            for sensor in child.get('Children', []):
+                                sensor_text = sensor.get('Text', '')
+                                value_str = sensor.get('Value', '0.0')
+                                
+                                if 'GPU Core' in sensor_text and 'gpu_temp' not in gpu_data:
+                                    gpu_data['gpu_temp'] = float(value_str.replace('°C', '').replace('°', '').strip())
+                                elif 'Hot Spot' in sensor_text or 'Hotspot' in sensor_text:
+                                    gpu_data['gpu_hotspot_temp'] = float(value_str.replace('°C', '').replace('°', '').strip())
+                        
+                        # Load/Usage
+                        elif 'Load' in child_text:
+                            for sensor in child.get('Children', []):
+                                sensor_text = sensor.get('Text', '')
+                                value_str = sensor.get('Value', '0.0 %')
+                                
+                                if 'GPU Core' in sensor_text and 'gpu_percent' not in gpu_data:
+                                    gpu_data['gpu_percent'] = float(value_str.replace('%', '').strip())
+                                elif 'GPU Memory' in sensor_text and 'gpu_memory_percent' not in gpu_data:
+                                    gpu_data['gpu_memory_percent'] = float(value_str.replace('%', '').strip())
+                        
+                        # Clocks
+                        elif 'Clock' in child_text:
+                            for sensor in child.get('Children', []):
+                                sensor_text = sensor.get('Text', '')
+                                value_str = sensor.get('Value', '0.0 MHz')
+                                
+                                if 'GPU Core' in sensor_text:
+                                    gpu_data['gpu_clock'] = float(value_str.replace('MHz', '').strip())
+                                elif 'GPU Memory' in sensor_text:
+                                    gpu_data['gpu_memory_clock'] = float(value_str.replace('MHz', '').strip())
+                        
+                        # Power
+                        elif 'Power' in child_text:
+                            for sensor in child.get('Children', []):
+                                sensor_text = sensor.get('Text', '')
+                                value_str = sensor.get('Value', '0.0 W')
+                                
+                                if 'GPU' in sensor_text or 'Package' in sensor_text:
+                                    gpu_data['gpu_power'] = float(value_str.replace('W', '').strip())
+                        
+                        # Memory Data (MB)
+                        elif 'Data' in child_text or 'SmallData' in child_text:
+                            for sensor in child.get('Children', []):
+                                sensor_text = sensor.get('Text', '')
+                                value_str = sensor.get('Value', '0.0 MB')
+                                
+                                if 'Memory Used' in sensor_text:
+                                    gpu_data['gpu_memory_used'] = float(value_str.replace('MB', '').replace('GB', '').strip())
+                                    if 'GB' in value_str:
+                                        gpu_data['gpu_memory_used'] *= 1024
+                                elif 'Memory Total' in sensor_text:
+                                    gpu_data['gpu_memory_total'] = float(value_str.replace('MB', '').replace('GB', '').strip())
+                                    if 'GB' in value_str:
+                                        gpu_data['gpu_memory_total'] *= 1024
+                    
+                    # Only return if we got at least temperature or load data
+                    if 'gpu_temp' in gpu_data or 'gpu_percent' in gpu_data:
+                        # Set defaults for missing values
+                        gpu_data.setdefault('gpu_percent', 0.0)
+                        gpu_data.setdefault('gpu_memory_percent', 0.0)
+                        gpu_data.setdefault('gpu_temp', 0.0)
+                        return gpu_data
+                
+                # Recursively search children
+                for child in node.get('Children', []):
+                    result = find_gpu_data(child)
+                    if result:
+                        return result
+                return None
+            
+            return find_gpu_data(data)
+    except Exception as e:
+        # Silently fail - GPU monitoring is optional
         pass
     return None
 
@@ -184,6 +264,130 @@ def get_cpu_temp_from_libre_hardware_monitor():
     return 0
 
 
+def get_ram_temperatures():
+    """
+    Get RAM/DIMM temperatures from LibreHardwareMonitor
+
+    Returns:
+        dict: Dictionary containing:
+            - dimm_1_temp: DIMM #1 temperature in Celsius (0 if unavailable)
+            - dimm_2_temp: DIMM #2 temperature in Celsius (0 if unavailable)
+            - dimm_3_temp: DIMM #3 temperature in Celsius (0 if unavailable)
+            - dimm_4_temp: DIMM #4 temperature in Celsius (0 if unavailable)
+            - ram_temp_avg: Average temperature of populated DIMMs (0 if none)
+    """
+    try:
+        import urllib.request
+        import json
+        
+        url = "http://localhost:8085/data.json"
+        with urllib.request.urlopen(url, timeout=1) as response:
+            data = json.loads(response.read().decode())
+            
+            # Recursively search for RAM/DIMM temperature sensors
+            def find_dimm_temps(node):
+                temps = {}
+                
+                if isinstance(node, dict):
+                    # Check if this is a DIMM temperature node
+                    if node.get('Type') == 'Temperature' and 'DIMM' in node.get('Text', ''):
+                        dimm_text = node.get('Text', '')
+                        value_str = node.get('Value', '0.0 °C')
+                        try:
+                            temp = float(value_str.split()[0])
+                            # Extract DIMM number from text like "DIMM #1", "DIMM #3"
+                            if '#' in dimm_text:
+                                dimm_num = dimm_text.split('#')[1].split()[0]
+                                temps[f'dimm_{dimm_num}_temp'] = temp
+                        except (ValueError, IndexError):
+                            pass
+                    
+                    # Recursively search children
+                    if 'Children' in node:
+                        for child in node['Children']:
+                            temps.update(find_dimm_temps(child))
+                elif isinstance(node, list):
+                    for item in node:
+                        temps.update(find_dimm_temps(item))
+                
+                return temps
+            
+            dimm_temps = find_dimm_temps(data)
+            
+            # Ensure all 4 DIMM slots are represented (0 if not found)
+            result = {
+                'dimm_1_temp': dimm_temps.get('dimm_1_temp', 0),
+                'dimm_2_temp': dimm_temps.get('dimm_2_temp', 0),
+                'dimm_3_temp': dimm_temps.get('dimm_3_temp', 0),
+                'dimm_4_temp': dimm_temps.get('dimm_4_temp', 0)
+            }
+            
+            # Calculate average of populated DIMMs
+            populated_temps = [temp for temp in result.values() if temp > 0]
+            if populated_temps:
+                result['ram_temp_avg'] = round(sum(populated_temps) / len(populated_temps), 1)
+            else:
+                result['ram_temp_avg'] = 0
+            
+            return result
+    except Exception:
+        pass
+    
+    return {'dimm_1_temp': 0, 'dimm_2_temp': 0, 'dimm_3_temp': 0, 'dimm_4_temp': 0, 'ram_temp_avg': 0}
+
+
+def get_nvme_temperature():
+    """
+    Get NVMe SSD temperature from LibreHardwareMonitor
+
+    Returns:
+        float: NVMe temperature in Celsius (0 if unavailable)
+    """
+    try:
+        import urllib.request
+        import json
+        
+        url = "http://localhost:8085/data.json"
+        with urllib.request.urlopen(url, timeout=1) as response:
+            data = json.loads(response.read().decode())
+            
+            # Recursively search for NVMe temperature
+            def find_nvme_temp(node):
+                if isinstance(node, dict):
+                    # Check if this is an NVMe device
+                    if node.get('HardwareId', '').startswith('/nvme/'):
+                        # Look for temperature in children
+                        for child in node.get('Children', []):
+                            if child.get('Text') == 'Temperatures':
+                                # Get first temperature sensor (usually the main one)
+                                for temp_sensor in child.get('Children', []):
+                                    if temp_sensor.get('Type') == 'Temperature':
+                                        value_str = temp_sensor.get('Value', '0.0 °C')
+                                        try:
+                                            return float(value_str.split()[0])
+                                        except (ValueError, IndexError):
+                                            pass
+                    
+                    # Recursively search children
+                    if 'Children' in node:
+                        for child in node['Children']:
+                            temp = find_nvme_temp(child)
+                            if temp > 0:
+                                return temp
+                elif isinstance(node, list):
+                    for item in node:
+                        temp = find_nvme_temp(item)
+                        if temp > 0:
+                            return temp
+                
+                return 0
+            
+            return find_nvme_temp(data)
+    except Exception:
+        pass
+    return 0
+
+
 def get_component_temperatures():
     """
     Get all available temperature sensors
@@ -227,7 +431,8 @@ _external_data_manager = ExternalDataManager()
 
 def get_network_speed():
     """
-    Get current network upload/download speed
+    Get current network upload/download speed from LibreHardwareMonitor
+    Falls back to psutil if LibreHardwareMonitor is unavailable
 
     Returns:
         dict: Dictionary containing:
@@ -236,6 +441,77 @@ def get_network_speed():
             - upload_mbs: Upload speed in MB/s
             - download_mbs: Download speed in MB/s
     """
+    # Try LibreHardwareMonitor first
+    try:
+        import urllib.request
+        import json
+        
+        url = "http://localhost:8085/data.json"
+        with urllib.request.urlopen(url, timeout=1) as response:
+            data = json.loads(response.read().decode())
+            
+            # Find active network adapter with throughput data
+            def find_network_speed(node):
+                speeds = {'upload_kbs': 0.0, 'download_kbs': 0.0}
+                
+                if isinstance(node, dict):
+                    # Check if this is a network adapter node
+                    if node.get('HardwareId', '').startswith('/nic/'):
+                        # Look for throughput data in children
+                        for child in node.get('Children', []):
+                            if child.get('Text') == 'Throughput':
+                                for sensor in child.get('Children', []):
+                                    text = sensor.get('Text', '')
+                                    value_str = sensor.get('Value', '0.0 KB/s')
+                                    try:
+                                        # Parse value and unit
+                                        parts = value_str.split()
+                                        value = float(parts[0])
+                                        unit = parts[1] if len(parts) > 1 else 'KB/s'
+                                        
+                                        # Convert to KB/s
+                                        if 'MB/s' in unit:
+                                            value = value * 1024
+                                        elif 'GB/s' in unit:
+                                            value = value * 1024 * 1024
+                                        
+                                        if 'Upload' in text:
+                                            speeds['upload_kbs'] = max(speeds['upload_kbs'], value)
+                                        elif 'Download' in text:
+                                            speeds['download_kbs'] = max(speeds['download_kbs'], value)
+                                    except (ValueError, IndexError):
+                                        pass
+                    
+                    # Recursively search children
+                    if 'Children' in node:
+                        for child in node['Children']:
+                            child_speeds = find_network_speed(child)
+                            # Use the adapter with the highest speeds
+                            if child_speeds['upload_kbs'] > speeds['upload_kbs']:
+                                speeds['upload_kbs'] = child_speeds['upload_kbs']
+                            if child_speeds['download_kbs'] > speeds['download_kbs']:
+                                speeds['download_kbs'] = child_speeds['download_kbs']
+                elif isinstance(node, list):
+                    for item in node:
+                        child_speeds = find_network_speed(item)
+                        if child_speeds['upload_kbs'] > speeds['upload_kbs']:
+                            speeds['upload_kbs'] = child_speeds['upload_kbs']
+                        if child_speeds['download_kbs'] > speeds['download_kbs']:
+                            speeds['download_kbs'] = child_speeds['download_kbs']
+                
+                return speeds
+            
+            speeds = find_network_speed(data)
+            return {
+                'upload_kbs': round(speeds['upload_kbs'], 2),
+                'download_kbs': round(speeds['download_kbs'], 2),
+                'upload_mbs': round(speeds['upload_kbs'] / 1024, 3),
+                'download_mbs': round(speeds['download_kbs'] / 1024, 3)
+            }
+    except Exception:
+        pass
+    
+    # Fallback to psutil method
     global _last_net_io, _last_net_time
 
     try:
@@ -354,7 +630,8 @@ def get_per_core_cpu():
 
 def get_disk_io_speed():
     """
-    Calculate disk read/write speeds in MB/s and KB/s
+    Calculate disk read/write speeds from LibreHardwareMonitor
+    Falls back to psutil if LibreHardwareMonitor is unavailable
 
     Returns:
         dict: Dictionary containing:
@@ -363,6 +640,78 @@ def get_disk_io_speed():
             - disk_read_kbs: Read speed in KB/s
             - disk_write_kbs: Write speed in KB/s
     """
+    # Try LibreHardwareMonitor first
+    try:
+        import urllib.request
+        import json
+        
+        url = "http://localhost:8085/data.json"
+        with urllib.request.urlopen(url, timeout=1) as response:
+            data = json.loads(response.read().decode())
+            
+            # Find NVMe/disk throughput data
+            def find_disk_speed(node):
+                speeds = {'read_mbs': 0.0, 'write_mbs': 0.0}
+                
+                if isinstance(node, dict):
+                    # Check if this is an NVMe/storage device node
+                    if node.get('HardwareId', '').startswith('/nvme/'):
+                        # Look for throughput data in children
+                        for child in node.get('Children', []):
+                            if child.get('Text') == 'Throughput':
+                                for sensor in child.get('Children', []):
+                                    text = sensor.get('Text', '')
+                                    value_str = sensor.get('Value', '0.0 KB/s')
+                                    try:
+                                        # Parse value and unit
+                                        parts = value_str.split()
+                                        value = float(parts[0])
+                                        unit = parts[1] if len(parts) > 1 else 'KB/s'
+                                        
+                                        # Convert to MB/s
+                                        if 'KB/s' in unit:
+                                            value = value / 1024
+                                        elif 'GB/s' in unit:
+                                            value = value * 1024
+                                        # else already in MB/s
+                                        
+                                        if 'Read' in text:
+                                            speeds['read_mbs'] = max(speeds['read_mbs'], value)
+                                        elif 'Write' in text:
+                                            speeds['write_mbs'] = max(speeds['write_mbs'], value)
+                                    except (ValueError, IndexError):
+                                        pass
+                    
+                    # Recursively search children
+                    if 'Children' in node:
+                        for child in node['Children']:
+                            child_speeds = find_disk_speed(child)
+                            # Use the disk with the highest speeds (active disk)
+                            if child_speeds['read_mbs'] > speeds['read_mbs']:
+                                speeds['read_mbs'] = child_speeds['read_mbs']
+                            if child_speeds['write_mbs'] > speeds['write_mbs']:
+                                speeds['write_mbs'] = child_speeds['write_mbs']
+                elif isinstance(node, list):
+                    for item in node:
+                        child_speeds = find_disk_speed(item)
+                        if child_speeds['read_mbs'] > speeds['read_mbs']:
+                            speeds['read_mbs'] = child_speeds['read_mbs']
+                        if child_speeds['write_mbs'] > speeds['write_mbs']:
+                            speeds['write_mbs'] = child_speeds['write_mbs']
+                
+                return speeds
+            
+            speeds = find_disk_speed(data)
+            return {
+                'disk_read_mbs': round(speeds['read_mbs'], 2),
+                'disk_write_mbs': round(speeds['write_mbs'], 2),
+                'disk_read_kbs': round(speeds['read_mbs'] * 1024, 1),
+                'disk_write_kbs': round(speeds['write_mbs'] * 1024, 1)
+            }
+    except Exception:
+        pass
+    
+    # Fallback to psutil method
     global _last_disk_io, _last_disk_io_time
 
     try:
@@ -463,6 +812,8 @@ def get_all_metrics():
     cpu_freq = get_cpu_frequency()
     per_core = get_per_core_cpu()
     disk_io = get_disk_io_speed()
+    ram_temps = get_ram_temperatures()
+    nvme_temp = get_nvme_temperature()
 
     metrics = {
         'cpu_percent': get_cpu_usage(),
@@ -497,6 +848,12 @@ def get_all_metrics():
     # Add disk I/O speeds
     metrics.update(disk_io)
 
+    # Add RAM temperatures
+    metrics.update(ram_temps)
+    
+    # Add NVMe temperature
+    metrics['nvme_temp'] = nvme_temp
+
     # Add GPU metrics if available
     if gpu:
         metrics.update({
@@ -505,6 +862,19 @@ def get_all_metrics():
             'gpu_temp': gpu['gpu_temp'],
             'gpu_name': gpu['gpu_name']
         })
+        # Add optional GPU metrics if available
+        if 'gpu_hotspot_temp' in gpu:
+            metrics['gpu_hotspot_temp'] = gpu['gpu_hotspot_temp']
+        if 'gpu_clock' in gpu:
+            metrics['gpu_clock'] = gpu['gpu_clock']
+        if 'gpu_memory_clock' in gpu:
+            metrics['gpu_memory_clock'] = gpu['gpu_memory_clock']
+        if 'gpu_power' in gpu:
+            metrics['gpu_power'] = gpu['gpu_power']
+        if 'gpu_memory_used' in gpu:
+            metrics['gpu_memory_used'] = gpu['gpu_memory_used']
+        if 'gpu_memory_total' in gpu:
+            metrics['gpu_memory_total'] = gpu['gpu_memory_total']
     else:
         # Default values when GPU not available
         metrics.update({
@@ -604,6 +974,34 @@ def get_all_metrics():
         _data_history.add_data_point('cpu_temp', metrics['cpu_temp'])
     if metrics['gpu_temp'] > 0:
         _data_history.add_data_point('gpu_temp', metrics['gpu_temp'])
+    if 'gpu_hotspot_temp' in metrics and metrics['gpu_hotspot_temp'] > 0:
+        _data_history.add_data_point('gpu_hotspot_temp', metrics['gpu_hotspot_temp'])
+    
+    # RAM temperatures
+    if metrics.get('dimm_1_temp', 0) > 0:
+        _data_history.add_data_point('dimm_1_temp', metrics['dimm_1_temp'])
+    if metrics.get('dimm_2_temp', 0) > 0:
+        _data_history.add_data_point('dimm_2_temp', metrics['dimm_2_temp'])
+    if metrics.get('dimm_3_temp', 0) > 0:
+        _data_history.add_data_point('dimm_3_temp', metrics['dimm_3_temp'])
+    if metrics.get('dimm_4_temp', 0) > 0:
+        _data_history.add_data_point('dimm_4_temp', metrics['dimm_4_temp'])
+    if metrics.get('ram_temp_avg', 0) > 0:
+        _data_history.add_data_point('ram_temp_avg', metrics['ram_temp_avg'])
+    
+    # NVMe temperature
+    if metrics.get('nvme_temp', 0) > 0:
+        _data_history.add_data_point('nvme_temp', metrics['nvme_temp'])
+    
+    # GPU clocks and power
+    if 'gpu_clock' in metrics and metrics['gpu_clock'] > 0:
+        _data_history.add_data_point('gpu_clock', metrics['gpu_clock'])
+    if 'gpu_memory_clock' in metrics and metrics['gpu_memory_clock'] > 0:
+        _data_history.add_data_point('gpu_memory_clock', metrics['gpu_memory_clock'])
+    if 'gpu_power' in metrics and metrics['gpu_power'] > 0:
+        _data_history.add_data_point('gpu_power', metrics['gpu_power'])
+    if 'gpu_memory_used' in metrics and metrics['gpu_memory_used'] > 0:
+        _data_history.add_data_point('gpu_memory_used', metrics['gpu_memory_used'])
     
     # All temperature sensors
     for key, value in metrics.items():
@@ -677,6 +1075,31 @@ if __name__ == "__main__":
     print(f"GPU Usage: {metrics['gpu_percent']:.1f}%")
     print(f"GPU Memory: {metrics['gpu_memory_percent']:.1f}%")
     print(f"GPU Temp: {metrics['gpu_temp']:.0f}°C")
+    if 'gpu_hotspot_temp' in metrics:
+        print(f"GPU Hotspot Temp: {metrics['gpu_hotspot_temp']:.0f}°C")
+    if 'gpu_clock' in metrics:
+        print(f"GPU Core Clock: {metrics['gpu_clock']:.0f} MHz")
+    if 'gpu_memory_clock' in metrics:
+        print(f"GPU Memory Clock: {metrics['gpu_memory_clock']:.0f} MHz")
+    if 'gpu_power' in metrics:
+        print(f"GPU Power: {metrics['gpu_power']:.1f} W")
+    if 'gpu_memory_used' in metrics and 'gpu_memory_total' in metrics:
+        print(f"GPU Memory: {metrics['gpu_memory_used']:.0f} MB / {metrics['gpu_memory_total']:.0f} MB")
     print()
     print(f"Network Upload: {metrics['net_upload_kbs']:.2f} KB/s ({metrics['net_upload_mbs']:.3f} MB/s)")
     print(f"Network Download: {metrics['net_download_kbs']:.2f} KB/s ({metrics['net_download_mbs']:.3f} MB/s)")
+    print()
+    print("RAM Temperatures:")
+    if metrics.get('ram_temp_avg', 0) > 0:
+        print(f"  Average: {metrics['ram_temp_avg']:.1f}°C")
+    if metrics.get('dimm_1_temp', 0) > 0:
+        print(f"  DIMM #1: {metrics['dimm_1_temp']:.1f}°C")
+    if metrics.get('dimm_2_temp', 0) > 0:
+        print(f"  DIMM #2: {metrics['dimm_2_temp']:.1f}°C")
+    if metrics.get('dimm_3_temp', 0) > 0:
+        print(f"  DIMM #3: {metrics['dimm_3_temp']:.1f}°C")
+    if metrics.get('dimm_4_temp', 0) > 0:
+        print(f"  DIMM #4: {metrics['dimm_4_temp']:.1f}°C")
+    print()
+    if metrics.get('nvme_temp', 0) > 0:
+        print(f"NVMe Temperature: {metrics['nvme_temp']:.1f}°C")

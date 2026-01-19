@@ -1161,14 +1161,16 @@ class TuringControlCenter:
         widget_ids = set()
         valid_data_sources = ['time', 'date', 'cpu_percent', 'cpu_name', 'ram_percent',
                              'ram_used', 'ram_total', 'disk_c_percent', 'disk_c_used', 'disk_c_total',
-                             'gpu_percent', 'gpu_name', 'gpu_temp', 'gpu_memory_percent', 'cpu_temp',
-                             'net_upload_kbs', 'net_download_kbs', 'net_upload_mbs', 'net_download_mbs',
+                             'gpu_percent', 'gpu_name', 'gpu_temp', 'gpu_memory_percent', 'gpu_hotspot_temp',
+                             'gpu_clock', 'gpu_memory_clock', 'gpu_power', 'gpu_memory_used', 'gpu_memory_total',
+                             'cpu_temp', 'net_upload_kbs', 'net_download_kbs', 'net_upload_mbs', 'net_download_mbs',
                              'uptime', 'hostname',
                              'cpu_freq_mhz', 'cpu_freq_ghz', 'cpu_core_0', 'cpu_core_1', 'cpu_core_2', 'cpu_core_3',
                              'cpu_core_4', 'cpu_core_5', 'cpu_core_6', 'cpu_core_7', 'cpu_core_8', 'cpu_core_9',
                              'cpu_core_10', 'cpu_core_11', 'cpu_core_12', 'cpu_core_13', 'cpu_core_14', 'cpu_core_15',
                              'cpu_cores_avg', 'cpu_core_count',
                              'disk_read_mbs', 'disk_write_mbs', 'disk_read_kbs', 'disk_write_kbs',
+                             'dimm_1_temp', 'dimm_2_temp', 'dimm_3_temp', 'dimm_4_temp', 'ram_temp_avg', 'nvme_temp',
                              'weather_temp', 'weather_temp_f', 'weather_condition', 'weather_humidity', 'weather_wind_speed']
 
         for i, widget in enumerate(layout['widgets']):
@@ -1649,11 +1651,13 @@ class WidgetDialog:
         ttk.Label(scrollable_frame, text="Data Source:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
         data_sources = ['time', 'date', 'cpu_percent', 'cpu_name', 'ram_percent', 'ram_used', 'ram_total',
                        'disk_c_percent', 'disk_c_used', 'disk_c_total', 'gpu_percent', 'gpu_name', 'gpu_temp',
-                       'gpu_memory_percent', 'cpu_temp', 'net_upload_kbs', 'net_download_kbs',
+                       'gpu_memory_percent', 'gpu_hotspot_temp', 'gpu_clock', 'gpu_memory_clock', 'gpu_power',
+                       'gpu_memory_used', 'gpu_memory_total', 'cpu_temp', 'net_upload_kbs', 'net_download_kbs',
                        'net_upload_mbs', 'net_download_mbs', 'uptime', 'hostname',
                        'cpu_freq_mhz', 'cpu_freq_ghz', 'cpu_core_0', 'cpu_core_1', 'cpu_core_2', 'cpu_core_3',
                        'cpu_core_4', 'cpu_core_5', 'cpu_core_6', 'cpu_core_7', 'cpu_cores_avg',
                        'disk_read_mbs', 'disk_write_mbs', 'disk_read_kbs', 'disk_write_kbs',
+                       'dimm_1_temp', 'dimm_2_temp', 'dimm_3_temp', 'dimm_4_temp', 'ram_temp_avg', 'nvme_temp',
                        'weather_temp', 'weather_temp_f', 'weather_condition', 'weather_humidity', 'weather_wind_speed',
                        'stock_price', 'crypto_price']
         self.data_source_var = tk.StringVar(value=self.existing_widget.get('data_source', 'time') if self.existing_widget else 'time')
