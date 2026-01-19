@@ -1785,9 +1785,11 @@ class WidgetDialog:
             'ram_percent': 67.2,
             'ram_used': 8.5,
             'ram_total': 16.0,
+            'ram_name': 'System RAM',
             'disk_c_percent': 55.0,
             'disk_c_used': 250,
             'disk_c_total': 500,
+            'disk_name': 'C: Drive',
             'gpu_percent': 30.0,
             'gpu_name': 'NVIDIA RTX',
             'gpu_temp': 65,
@@ -1887,6 +1889,7 @@ class WidgetDialog:
                     config['text_color'] = self.pb_text_color_var.get()
                     config['show_percentage'] = self.show_percentage_var.get()
                     config['show_label'] = self.show_label_var.get()
+                    config['display_component_name'] = self.display_component_name_var.get() if hasattr(self, 'display_component_name_var') else False
                     if hasattr(self, 'gradient_var'):
                         config['gradient'] = self.gradient_var.get()
                         if config.get('gradient'):
@@ -1914,6 +1917,7 @@ class WidgetDialog:
                     config['background_color'] = self.sparkline_bg_var.get()
                     config['text_color'] = self.sparkline_text_color_var.get()
                     config['grid_color'] = self.grid_color_var.get()
+                    config['display_component_name'] = self.sparkline_display_component_name_var.get() if hasattr(self, 'sparkline_display_component_name_var') else False
                     
                     # DEBUG LOGGING
                     print(f"[SPARKLINE CONFIG] label='{config['label']}', line_color={config['line_color']}, "
@@ -2109,6 +2113,11 @@ class WidgetDialog:
         self.show_label_var.trace_add('write', lambda *args: self.update_preview())
         ttk.Checkbutton(display_opts_frame, text="Show Label", variable=self.show_label_var).pack(side='left', padx=5)
 
+        row += 1
+        self.display_component_name_var = tk.BooleanVar(value=self.existing_widget.get('display_component_name', False) if self.existing_widget and self.existing_widget['type']=='progress_bar' else False)
+        self.display_component_name_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Checkbutton(self.specific_frame, text="Display Component Name", variable=self.display_component_name_var).grid(row=row, column=0, columnspan=2, sticky='w', pady=5)
+
     def create_sparkline_widget_fields(self):
         """Create fields specific to SparklineWidget"""
         ttk.Label(self.specific_frame, text="Sparkline Widget Properties", font=('Arial', 10, 'bold')).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0,10))
@@ -2230,6 +2239,14 @@ class WidgetDialog:
         self.show_current_var.trace_add('write', lambda *args: self.update_preview())
         ttk.Checkbutton(self.specific_frame, text="Show Current Value", variable=self.show_current_var).grid(row=row, column=0, columnspan=2, sticky='w', pady=5)
 
+        row += 1
+        default_display_component = False
+        if self.existing_widget and self.existing_widget.get('type') == 'sparkline':
+            default_display_component = self.existing_widget.get('display_component_name', False)
+        self.sparkline_display_component_name_var = tk.BooleanVar(value=default_display_component)
+        self.sparkline_display_component_name_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Checkbutton(self.specific_frame, text="Display Component Name", variable=self.sparkline_display_component_name_var).grid(row=row, column=0, columnspan=2, sticky='w', pady=5)
+
     def toggle_sparkline_fill(self):
         """Show/hide fill color based on checkbox"""
         if self.use_fill_var.get():
@@ -2323,6 +2340,7 @@ class WidgetDialog:
             config['corner_radius'] = self.corner_radius_var.get()
             config['show_percentage'] = self.show_percentage_var.get()
             config['show_label'] = self.show_label_var.get()
+            config['display_component_name'] = self.display_component_name_var.get()
 
         elif config['type'] == 'sparkline':
             config['label'] = self.sparkline_label_var.get()
@@ -2335,6 +2353,7 @@ class WidgetDialog:
             config['background_color'] = self.sparkline_bg_var.get()
             config['text_color'] = self.sparkline_text_color_var.get()
             config['grid_color'] = self.grid_color_var.get()
+            config['display_component_name'] = self.sparkline_display_component_name_var.get()
             
             print(f"[SAVE SPARKLINE] Saving config: label='{config['label']}', line_color={config['line_color']}, "
                   f"fill={config['fill_color']}, show_current={config['show_current_value']}")

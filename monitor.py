@@ -414,15 +414,18 @@ def get_all_metrics():
 
     metrics = {
         'cpu_percent': get_cpu_usage(),
-        'cpu_name': get_cpu_name(),
+        'cpu_name': 'Intel core i7-14700',  # Static name for CPU
         'ram_used': ram['used'],
         'ram_total': ram['total'],
         'ram_percent': ram['percent'],
+        'ram_name': 'XPG Lancer DDR5 6400MHz',  # Generic name for RAM
         'time': get_current_time(),
         'date': datetime.now().strftime('%a, %b %d'),
         'disk_c_used': disk['used'],
         'disk_c_total': disk['total'],
         'disk_c_percent': disk['percent'],
+        'disk_name': 'Samsung SSD 990 PRO 2TB',  # Example static name
+
         # Network speeds
         'net_upload_kbs': network['upload_kbs'],
         'net_download_kbs': network['download_kbs'],

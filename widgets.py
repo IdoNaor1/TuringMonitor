@@ -6,6 +6,53 @@ Base widget class and built-in widget implementations
 from PIL import ImageDraw, ImageFont, Image
 
 
+def get_component_name_for_data_source(data_source, data):
+    """
+    Map data source to its component name field
+    
+    Args:
+        data_source: The data source key (e.g., 'cpu_percent', 'gpu_percent')
+        data: Dictionary containing all system metrics
+        
+    Returns:
+        str: Component name or None if not available
+    """
+    # Mapping of data sources to their component name fields
+    source_to_name = {
+        'cpu_percent': 'cpu_name',
+        'cpu_temp': 'cpu_name',
+        'cpu_freq_mhz': 'cpu_name',
+        'cpu_freq_ghz': 'cpu_name',
+        'cpu_core_0': 'cpu_name',
+        'cpu_core_1': 'cpu_name',
+        'cpu_core_2': 'cpu_name',
+        'cpu_core_3': 'cpu_name',
+        'cpu_core_4': 'cpu_name',
+        'cpu_core_5': 'cpu_name',
+        'cpu_core_6': 'cpu_name',
+        'cpu_core_7': 'cpu_name',
+        'cpu_cores_avg': 'cpu_name',
+        'gpu_percent': 'gpu_name',
+        'gpu_memory_percent': 'gpu_name',
+        'gpu_temp': 'gpu_name',
+        'ram_percent': 'ram_name',
+        'ram_used': 'ram_name',
+        'ram_total': 'ram_name',
+        'disk_c_percent': 'disk_name',
+        'disk_c_used': 'disk_name',
+        'disk_c_total': 'disk_name',
+    }
+    
+    name_field = source_to_name.get(data_source)
+    if name_field and name_field in data:
+        component_name = data.get(name_field)
+        # Filter out generic/unavailable names
+        if component_name and component_name not in ['N/A', 'Unknown CPU', '']:
+            return component_name
+    
+    return None
+
+
 def get_font_filename(family, bold=False, italic=False):
     """
     Map font family and style to Windows font file
@@ -265,26 +312,45 @@ class ProgressBarWidget(Widget):
         gradient_end_color = self.config.get('gradient_end_color', bar_color)
         show_percentage = self.config.get('show_percentage', True)
         show_label = self.config.get('show_label', True)
+        display_component_name = self.config.get('display_component_name', False)
 
         # Get data source value (0-100 percentage)
         data_source = self.config.get('data_source', 'cpu_percent')
         percent = float(data.get(data_source, 0))
         percent = max(0, min(100, percent))  # Clamp to 0-100
 
-        # Try to load a font
+        # Try to load fonts
         try:
             font = ImageFont.truetype("C:\\Windows\\Fonts\\arial.ttf", 18)
             label_font = ImageFont.truetype("C:\\Windows\\Fonts\\arial.ttf", 14)
+            component_name_font = ImageFont.truetype("C:\\Windows\\Fonts\\arialbd.ttf", 11)  # Bold, smaller
         except:
             font = ImageFont.load_default()
             label_font = ImageFont.load_default()
+            component_name_font = ImageFont.load_default()
 
-        # Draw label (only if show_label is enabled)
+        # Draw label and component name (if enabled)
+        label_height = 0
         if label and show_label:
-            draw.text((x, y), label, fill=text_color, font=label_font)
-            label_height = 20
-        else:
-            label_height = 0
+            if display_component_name:
+                # Get component name from data
+                component_name = get_component_name_for_data_source(data_source, data)
+                if component_name:
+                    # Draw label on the left
+                    draw.text((x, y), label, fill=text_color, font=label_font)
+                    # Draw component name on the right (bold, smaller)
+                    bbox = draw.textbbox((0, 0), component_name, font=component_name_font)
+                    comp_width = bbox[2] - bbox[0]
+                    draw.text((x + width - comp_width, y), component_name, fill=text_color, font=component_name_font)
+                    label_height = 20
+                else:
+                    # No component name available, just show label centered
+                    draw.text((x, y), label, fill=text_color, font=label_font)
+                    label_height = 20
+            else:
+                # Normal label display
+                draw.text((x, y), label, fill=text_color, font=label_font)
+                label_height = 20
 
         # Calculate bar dimensions
         bar_y = y + label_height + 5
@@ -353,6 +419,7 @@ class SparklineWidget(Widget):
         min_value = self.config.get('min_value', 0)
         max_value = self.config.get('max_value', 100)
         show_current = self.config.get('show_current_value', True)
+        display_component_name = self.config.get('display_component_name', False)
         
         # DEBUG LOGGING
         print(f"[SPARKLINE RENDER] label='{label}', line_color={line_color}, "
@@ -376,7 +443,7 @@ class SparklineWidget(Widget):
             return
 
         # Reserve space for label and current value at top
-        label_height = 16 if label or show_current else 0
+        label_height = 16 if label or show_current or display_component_name else 0
         graph_y = y + label_height
         graph_height = height - label_height - 5  # 5px padding at bottom
 
@@ -389,15 +456,42 @@ class SparklineWidget(Widget):
         try:
             title_font = ImageFont.truetype("C:\\Windows\\Fonts\\arial.ttf", 12)
             value_font = ImageFont.truetype("C:\\Windows\\Fonts\\arial.ttf", 10)
+            component_name_font = ImageFont.truetype("C:\\Windows\\Fonts\\arialbd.ttf", 11)  # Bold, smaller
             axis_font = ImageFont.truetype("C:\\Windows\\Fonts\\arial.ttf", 9)
         except:
             title_font = ImageFont.load_default()
             value_font = ImageFont.load_default()
+            component_name_font = ImageFont.load_default()
             axis_font = ImageFont.load_default()
 
-        # Draw label and current value in header
-        if label:
-            draw.text((x + 5, y + 2), label, fill=text_color, font=title_font)
+        # Draw label and component name in header
+        if display_component_name:
+            # Get component name from data
+            component_name = get_component_name_for_data_source(data_source, data)
+            if label and component_name:
+                # Draw label on the left
+                draw.text((x + 5, y + 2), label, fill=text_color, font=title_font)
+                # Draw component name on the right (bold, smaller)
+                bbox = draw.textbbox((0, 0), component_name, font=component_name_font)
+                comp_width = bbox[2] - bbox[0]
+                # Position it considering current value space
+                if show_current and len(history) > 0:
+                    current = history[-1]
+                    current_text = f"{current:.1f}"
+                    curr_bbox = draw.textbbox((0, 0), current_text, font=value_font)
+                    curr_width = curr_bbox[2] - curr_bbox[0]
+                    # Place component name to the left of current value
+                    draw.text((x + width - comp_width - curr_width - 10, y + 2), component_name, fill=text_color, font=component_name_font)
+                else:
+                    # No current value, place at right edge
+                    draw.text((x + width - comp_width - 5, y + 2), component_name, fill=text_color, font=component_name_font)
+            elif label:
+                # Component name not available, just show label
+                draw.text((x + 5, y + 2), label, fill=text_color, font=title_font)
+        else:
+            # Normal label display
+            if label:
+                draw.text((x + 5, y + 2), label, fill=text_color, font=title_font)
 
         if show_current and len(history) > 0:
             current = history[-1]
