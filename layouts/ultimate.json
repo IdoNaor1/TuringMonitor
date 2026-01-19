@@ -37,8 +37,10 @@
         "height": 20
       },
       "data_source": "date",
-      "font_size": 14,
+      "font_size": 19,
       "font_family": "arial",
+      "bold": false,
+      "italic": false,
       "color": "#888888",
       "align": "center"
     },
@@ -222,7 +224,7 @@
       "type": "text",
       "id": "disk_used_text",
       "position": {
-        "x": 10,
+        "x": 12,
         "y": 390
       },
       "size": {
@@ -230,7 +232,7 @@
         "height": 20
       },
       "data_source": "disk_c_used",
-      "font_size": 14,
+      "font_size": 16,
       "font_family": "arial",
       "bold": false,
       "italic": false,
@@ -249,7 +251,7 @@
         "height": 20
       },
       "data_source": "disk_c_total",
-      "font_size": 14,
+      "font_size": 15,
       "font_family": "arial",
       "bold": false,
       "italic": false,
