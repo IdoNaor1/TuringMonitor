@@ -46,6 +46,15 @@ try:
             cfg.BAUD_RATE = user_settings.get("BAUD_RATE", cfg.BAUD_RATE)
             cfg.UPDATE_INTERVAL_MS = user_settings.get("UPDATE_INTERVAL_MS", cfg.UPDATE_INTERVAL_MS)
             print(f"Loaded user settings: COM_PORT={cfg.COM_PORT}, BAUD_RATE={cfg.BAUD_RATE}")
+
+            # Initialize external data if configured
+            if 'external_data' in user_settings:
+                try:
+                    from monitor import initialize_external_data
+                    initialize_external_data(user_settings['external_data'])
+                    print("External data manager initialized")
+                except Exception as e:
+                    print(f"Could not initialize external data: {e}")
 except Exception as e:
     print(f"Could not load user settings: {e}")
 
@@ -106,7 +115,10 @@ class TuringControlCenter:
         # Tab 3: Settings
         self.create_settings_tab()
 
-        # Tab 4: Test & Diagnostics
+        # Tab 4: External Data
+        self.create_external_data_tab()
+
+        # Tab 5: Test & Diagnostics
         self.create_test_tab()
 
     def create_monitor_tab(self):
@@ -269,6 +281,91 @@ class TuringControlCenter:
 
         # Save Settings
         ttk.Button(tab, text="💾 Save All Settings", command=self.save_settings).pack(pady=20)
+
+    def create_external_data_tab(self):
+        """Create external data configuration tab"""
+        tab = ttk.Frame(self.notebook)
+        self.notebook.add(tab, text="  External Data  ")
+
+        # Create scrollable frame
+        canvas = tk.Canvas(tab)
+        scrollbar = ttk.Scrollbar(tab, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        # Weather Section
+        weather_frame = ttk.LabelFrame(scrollable_frame, text="Weather Configuration", padding=15)
+        weather_frame.pack(fill='x', padx=10, pady=10)
+
+        self.weather_enabled = tk.BooleanVar(value=False)
+        ttk.Checkbutton(weather_frame, text="Enable Weather",
+                       variable=self.weather_enabled).pack(anchor='w')
+
+        ttk.Label(weather_frame, text="Location (city name):").pack(anchor='w', pady=(10, 2))
+        self.weather_location = tk.StringVar(value="New York")
+        ttk.Entry(weather_frame, textvariable=self.weather_location,
+                 width=30).pack(anchor='w', padx=20)
+
+        ttk.Label(weather_frame, text="Update Interval (minutes):").pack(anchor='w', pady=(10, 2))
+        self.weather_interval = tk.IntVar(value=10)
+        ttk.Spinbox(weather_frame, from_=5, to=60,
+                   textvariable=self.weather_interval, width=10).pack(anchor='w', padx=20)
+
+        # Stock Tracking Section
+        stocks_frame = ttk.LabelFrame(scrollable_frame, text="Stock Tracking", padding=15)
+        stocks_frame.pack(fill='x', padx=10, pady=10)
+
+        self.stocks_enabled = tk.BooleanVar(value=False)
+        ttk.Checkbutton(stocks_frame, text="Enable Stock Tracking",
+                       variable=self.stocks_enabled).pack(anchor='w')
+
+        ttk.Label(stocks_frame, text="Stock Tickers (comma-separated, e.g., AAPL,TSLA):").pack(anchor='w', pady=(10, 2))
+        self.stock_tickers = tk.StringVar(value="AAPL,TSLA")
+        ttk.Entry(stocks_frame, textvariable=self.stock_tickers,
+                 width=40).pack(anchor='w', padx=20)
+
+        ttk.Label(stocks_frame, text="Update Interval (seconds):").pack(anchor='w', pady=(10, 2))
+        self.stock_interval = tk.IntVar(value=60)
+        ttk.Spinbox(stocks_frame, from_=30, to=300,
+                   textvariable=self.stock_interval, width=10).pack(anchor='w', padx=20)
+
+        # Crypto Tracking Section
+        crypto_frame = ttk.LabelFrame(scrollable_frame, text="Cryptocurrency Tracking", padding=15)
+        crypto_frame.pack(fill='x', padx=10, pady=10)
+
+        self.crypto_enabled = tk.BooleanVar(value=False)
+        ttk.Checkbutton(crypto_frame, text="Enable Crypto Tracking",
+                       variable=self.crypto_enabled).pack(anchor='w')
+
+        ttk.Label(crypto_frame, text="Crypto Symbols (comma-separated, e.g., bitcoin,ethereum):").pack(anchor='w', pady=(10, 2))
+        self.crypto_symbols = tk.StringVar(value="bitcoin,ethereum")
+        ttk.Entry(crypto_frame, textvariable=self.crypto_symbols,
+                 width=40).pack(anchor='w', padx=20)
+
+        ttk.Label(crypto_frame, text="Update Interval (seconds):").pack(anchor='w', pady=(10, 2))
+        self.crypto_interval = tk.IntVar(value=60)
+        ttk.Spinbox(crypto_frame, from_=30, to=300,
+                   textvariable=self.crypto_interval, width=10).pack(anchor='w', padx=20)
+
+        # Buttons
+        btn_frame = ttk.Frame(scrollable_frame)
+        btn_frame.pack(fill='x', padx=10, pady=20)
+
+        ttk.Button(btn_frame, text="Test Connection",
+                  command=self.test_external_data).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Save External Data Settings",
+                  command=self.save_external_data_settings).pack(side='left', padx=5)
+
+        # Pack canvas and scrollbar
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
 
     def create_test_tab(self):
         """Create test & diagnostics tab"""
@@ -1066,7 +1163,13 @@ class TuringControlCenter:
                              'ram_used', 'ram_total', 'disk_c_percent', 'disk_c_used', 'disk_c_total',
                              'gpu_percent', 'gpu_name', 'gpu_temp', 'gpu_memory_percent', 'cpu_temp',
                              'net_upload_kbs', 'net_download_kbs', 'net_upload_mbs', 'net_download_mbs',
-                             'uptime', 'hostname']
+                             'uptime', 'hostname',
+                             'cpu_freq_mhz', 'cpu_freq_ghz', 'cpu_core_0', 'cpu_core_1', 'cpu_core_2', 'cpu_core_3',
+                             'cpu_core_4', 'cpu_core_5', 'cpu_core_6', 'cpu_core_7', 'cpu_core_8', 'cpu_core_9',
+                             'cpu_core_10', 'cpu_core_11', 'cpu_core_12', 'cpu_core_13', 'cpu_core_14', 'cpu_core_15',
+                             'cpu_cores_avg', 'cpu_core_count',
+                             'disk_read_mbs', 'disk_write_mbs', 'disk_read_kbs', 'disk_write_kbs',
+                             'weather_temp', 'weather_temp_f', 'weather_condition', 'weather_humidity', 'weather_wind_speed']
 
         for i, widget in enumerate(layout['widgets']):
             widget_num = i + 1
@@ -1105,11 +1208,16 @@ class TuringControlCenter:
 
             # Check data source validity
             if 'data_source' in widget:
-                if widget['data_source'] not in valid_data_sources:
+                data_source = widget['data_source']
+                # Allow dynamic data sources (stock_*, crypto_*, temp_*)
+                is_dynamic = (data_source.startswith('stock_') or 
+                             data_source.startswith('crypto_') or 
+                             data_source.startswith('temp_'))
+                if data_source not in valid_data_sources and not is_dynamic:
                     errors.append(f"Widget {widget_num}: Unknown data source '{widget['data_source']}'")
 
             # Validate widget type
-            if widget['type'] not in ['text', 'progress_bar']:
+            if widget['type'] not in ['text', 'progress_bar', 'sparkline']:
                 errors.append(f"Widget {widget_num}: Unknown widget type '{widget['type']}'")
 
             # Validate color codes (if present)
@@ -1246,6 +1354,97 @@ class TuringControlCenter:
             desc_label.pack(side='left', padx=5)
 
         self.log("Layout list refreshed")
+
+    def test_external_data(self):
+        """Test external data connections"""
+        import monitor
+
+        self.log("Testing external data connections...")
+
+        # Build config
+        config = self._build_external_data_config()
+
+        # Initialize external data manager
+        monitor.initialize_external_data(config)
+
+        # Wait a few seconds for first fetch
+        self.root.after(5000, self._check_external_data_test)
+
+    def _check_external_data_test(self):
+        """Check external data test results"""
+        import monitor
+        data = monitor._external_data_manager.get_data()
+
+        msg = "External Data Test Results:\n\n"
+
+        if self.weather_enabled.get():
+            temp = data.get('weather_temp', 'N/A')
+            condition = data.get('weather_condition', 'N/A')
+            msg += f"Weather: {temp}°C, {condition}\n"
+
+        if self.stocks_enabled.get():
+            tickers = [t.strip() for t in self.stock_tickers.get().split(',')]
+            for ticker in tickers:
+                price = data.get(f'stock_{ticker}_price', 'N/A')
+                msg += f"Stock {ticker}: ${price}\n"
+
+        if self.crypto_enabled.get():
+            symbols = [s.strip() for s in self.crypto_symbols.get().split(',')]
+            for symbol in symbols:
+                price = data.get(f'crypto_{symbol}_price', 'N/A')
+                msg += f"Crypto {symbol}: ${price}\n"
+
+        if not data:
+            msg += "No data received yet. Check your settings and try again."
+
+        self.log("Test complete!")
+        messagebox.showinfo("Test Results", msg)
+
+    def save_external_data_settings(self):
+        """Save external data configuration"""
+        settings_path = os.path.join(os.path.expanduser("~"), ".turing_monitor_settings.json")
+
+        # Load existing settings
+        try:
+            with open(settings_path, 'r') as f:
+                settings = json.load(f)
+        except:
+            settings = {}
+
+        # Add external data config
+        settings['external_data'] = self._build_external_data_config()
+
+        # Save
+        with open(settings_path, 'w') as f:
+            json.dump(settings, f, indent=2)
+
+        self.log("External data settings saved!")
+        messagebox.showinfo("Success", "External data settings saved!")
+
+        # Apply the settings immediately
+        import monitor
+        monitor.initialize_external_data(settings['external_data'])
+
+    def _build_external_data_config(self):
+        """Build external data config dict from GUI fields"""
+        return {
+            'weather': {
+                'enabled': self.weather_enabled.get(),
+                'api': 'wttr.in',
+                'location': self.weather_location.get(),
+                'interval': self.weather_interval.get() * 60  # Convert to seconds
+            },
+            'stocks': {
+                'enabled': self.stocks_enabled.get(),
+                'tickers': [t.strip() for t in self.stock_tickers.get().split(',') if t.strip()],
+                'interval': self.stock_interval.get()
+            },
+            'crypto': {
+                'enabled': self.crypto_enabled.get(),
+                'symbols': [s.strip() for s in self.crypto_symbols.get().split(',') if s.strip()],
+                'interval': self.crypto_interval.get()
+            }
+        }
 
     def save_settings(self):
         """Save settings"""
@@ -1432,7 +1631,7 @@ class WidgetDialog:
         row = 1
         ttk.Label(scrollable_frame, text="Widget Type:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
         self.type_var = tk.StringVar(value=self.existing_widget.get('type', 'text') if self.existing_widget else 'text')
-        type_combo = ttk.Combobox(scrollable_frame, textvariable=self.type_var, values=['text', 'progress_bar'], state='readonly', width=25)
+        type_combo = ttk.Combobox(scrollable_frame, textvariable=self.type_var, values=['text', 'progress_bar', 'sparkline'], state='readonly', width=25)
         type_combo.grid(row=row, column=1, sticky='w', pady=5)
         type_combo.bind('<<ComboboxSelected>>', self.on_type_change)
 
@@ -1451,7 +1650,12 @@ class WidgetDialog:
         data_sources = ['time', 'date', 'cpu_percent', 'cpu_name', 'ram_percent', 'ram_used', 'ram_total',
                        'disk_c_percent', 'disk_c_used', 'disk_c_total', 'gpu_percent', 'gpu_name', 'gpu_temp',
                        'gpu_memory_percent', 'cpu_temp', 'net_upload_kbs', 'net_download_kbs',
-                       'net_upload_mbs', 'net_download_mbs', 'uptime', 'hostname']
+                       'net_upload_mbs', 'net_download_mbs', 'uptime', 'hostname',
+                       'cpu_freq_mhz', 'cpu_freq_ghz', 'cpu_core_0', 'cpu_core_1', 'cpu_core_2', 'cpu_core_3',
+                       'cpu_core_4', 'cpu_core_5', 'cpu_core_6', 'cpu_core_7', 'cpu_cores_avg',
+                       'disk_read_mbs', 'disk_write_mbs', 'disk_read_kbs', 'disk_write_kbs',
+                       'weather_temp', 'weather_temp_f', 'weather_condition', 'weather_humidity', 'weather_wind_speed',
+                       'stock_price', 'crypto_price']
         self.data_source_var = tk.StringVar(value=self.existing_widget.get('data_source', 'time') if self.existing_widget else 'time')
         self.data_source_var.trace_add('write', lambda *args: self.update_preview())
         source_combo = ttk.Combobox(scrollable_frame, textvariable=self.data_source_var, values=data_sources, width=25)
@@ -1529,7 +1733,7 @@ class WidgetDialog:
 
             # Import required modules
             from PIL import Image, ImageTk, ImageDraw
-            from widgets import TextWidget, ProgressBarWidget
+            from widgets import TextWidget, ProgressBarWidget, SparklineWidget
 
             # Create a preview image (320x480)
             preview_img = Image.new('RGB', (320, 480), color='black')
@@ -1547,6 +1751,10 @@ class WidgetDialog:
                 widget = TextWidget(widget_config)
             elif widget_config['type'] == 'progress_bar':
                 widget = ProgressBarWidget(widget_config)
+            elif widget_config['type'] == 'sparkline':
+                widget = SparklineWidget(widget_config)
+                # Provide sample historical data for sparkline preview
+                self.setup_sample_history(widget_config['data_source'])
             else:
                 return
 
@@ -1590,9 +1798,52 @@ class WidgetDialog:
             'net_upload_mbs': 0.12,
             'net_download_mbs': 0.85,
             'uptime': '5d 12h 34m',
-            'hostname': 'PC-NAME'
+            'hostname': 'PC-NAME',
+            'cpu_freq_mhz': 3600.0,
+            'cpu_freq_ghz': 3.6,
+            'cpu_core_0': 42.5,
+            'cpu_core_1': 38.2,
+            'cpu_core_2': 51.8,
+            'cpu_core_3': 45.1,
+            'cpu_core_4': 39.7,
+            'cpu_core_5': 47.3,
+            'cpu_core_6': 43.9,
+            'cpu_core_7': 40.5,
+            'cpu_cores_avg': 43.6,
+            'disk_read_mbs': 15.3,
+            'disk_write_mbs': 8.7,
+            'disk_read_kbs': 15680.0,
+            'disk_write_kbs': 8908.8,
+            'weather_temp': 22,
+            'weather_temp_f': 72,
+            'weather_condition': 'Partly Cloudy',
+            'weather_humidity': 65,
+            'weather_wind_speed': 12,
+            'stock_price': 178.50,
+            'crypto_price': 42580.25
         }
         return sample_values.get(data_source, 'N/A')
+
+    def setup_sample_history(self, data_source):
+        """Generate sample historical data for sparkline preview"""
+        import monitor
+        import random
+        import math
+
+        # Clear any existing history for this data source
+        if hasattr(monitor, '_data_history'):
+            # Generate 30 sample points with realistic variation
+            base_value = self.get_sample_data(data_source)
+            if isinstance(base_value, (int, float)):
+                # Create a wave pattern with some noise for realistic preview
+                for i in range(30):
+                    # Sine wave for smooth variation
+                    wave = math.sin(i / 5) * 15
+                    # Add some random noise
+                    noise = random.uniform(-5, 5)
+                    # Keep values positive and within reasonable range
+                    value = max(0, base_value + wave + noise)
+                    monitor._data_history.add_data_point(data_source, value)
 
     def build_widget_config(self):
         """Build widget config from current form values"""
@@ -1651,6 +1902,35 @@ class WidgetDialog:
                     config['text_color'] = '#FFFFFF'
                     config['show_percentage'] = True
                     config['show_label'] = True
+            elif config['type'] == 'sparkline':
+                if hasattr(self, 'sparkline_label_var'):
+                    config['label'] = self.sparkline_label_var.get()
+                    config['line_color'] = self.line_color_var.get()
+                    config['fill_color'] = self.fill_color_var.get() if self.use_fill_var.get() else None
+                    config['num_points'] = self.num_points_var.get()
+                    config['min_value'] = self.min_value_var.get()
+                    config['max_value'] = self.max_value_var.get()
+                    config['show_current_value'] = self.show_current_var.get()
+                    config['background_color'] = self.sparkline_bg_var.get()
+                    config['text_color'] = self.sparkline_text_color_var.get()
+                    config['grid_color'] = self.grid_color_var.get()
+                    
+                    # DEBUG LOGGING
+                    print(f"[SPARKLINE CONFIG] label='{config['label']}', line_color={config['line_color']}, "
+                          f"fill_color={config['fill_color']}, show_current_value={config['show_current_value']}")
+                else:
+                    # Default values for sparkline
+                    print("[SPARKLINE CONFIG] Using default values - sparkline_label_var not found!")
+                    config['label'] = 'GPU'
+                    config['line_color'] = '#FF00FF'
+                    config['fill_color'] = None
+                    config['num_points'] = 30
+                    config['min_value'] = 0
+                    config['max_value'] = 100
+                    config['show_current_value'] = True
+                    config['background_color'] = '#000000'
+                    config['text_color'] = '#FFFFFF'
+                    config['grid_color'] = '#333333'
 
             return config
         except Exception as e:
@@ -1669,6 +1949,8 @@ class WidgetDialog:
             self.create_text_widget_fields()
         elif widget_type == 'progress_bar':
             self.create_progress_bar_fields()
+        elif widget_type == 'sparkline':
+            self.create_sparkline_widget_fields()
 
         # Update preview after fields are created
         self.dialog.after(50, self.update_preview)
@@ -1827,6 +2109,138 @@ class WidgetDialog:
         self.show_label_var.trace_add('write', lambda *args: self.update_preview())
         ttk.Checkbutton(display_opts_frame, text="Show Label", variable=self.show_label_var).pack(side='left', padx=5)
 
+    def create_sparkline_widget_fields(self):
+        """Create fields specific to SparklineWidget"""
+        ttk.Label(self.specific_frame, text="Sparkline Widget Properties", font=('Arial', 10, 'bold')).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0,10))
+
+        # Label
+        row = 1
+        ttk.Label(self.specific_frame, text="Label:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
+        # Handle existing widget - get label or default to empty string for new widgets
+        default_label = ''
+        if self.existing_widget and self.existing_widget.get('type') == 'sparkline':
+            # Use existing label (could be empty string, which is valid)
+            default_label = self.existing_widget.get('label', '')
+        self.sparkline_label_var = tk.StringVar(value=default_label)
+        self.sparkline_label_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Entry(self.specific_frame, textvariable=self.sparkline_label_var, width=27).grid(row=row, column=1, sticky='w', pady=5)
+
+        # Line Color
+        row += 1
+        ttk.Label(self.specific_frame, text="Line Color:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
+        color_frame1 = ttk.Frame(self.specific_frame)
+        color_frame1.grid(row=row, column=1, sticky='w', pady=5)
+
+        self.line_color_var = tk.StringVar(value=self.existing_widget.get('line_color', '#FF00FF') if self.existing_widget and self.existing_widget['type']=='sparkline' else '#FF00FF')
+        self.line_color_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Entry(color_frame1, textvariable=self.line_color_var, width=10).pack(side='left', padx=5)
+        ttk.Button(color_frame1, text="Pick", command=lambda: self.pick_color(self.line_color_var)).pack(side='left')
+
+        # Use Fill Color checkbox
+        row += 1
+        self.use_fill_var = tk.BooleanVar(value=self.existing_widget.get('fill_color') is not None if self.existing_widget and self.existing_widget['type']=='sparkline' else False)
+        self.use_fill_var.trace_add('write', lambda *args: self.toggle_sparkline_fill())
+        ttk.Checkbutton(self.specific_frame, text="Use Fill Color", variable=self.use_fill_var).grid(row=row, column=0, columnspan=2, sticky='w', pady=5)
+
+        # Fill Color (conditional)
+        row += 1
+        self.fill_label = ttk.Label(self.specific_frame, text="Fill Color:")
+        self.fill_color_frame = ttk.Frame(self.specific_frame)
+        self.fill_row = row
+
+        self.fill_color_var = tk.StringVar(value=self.existing_widget.get('fill_color', '#FF00FF40') if self.existing_widget and self.existing_widget['type']=='sparkline' else '#FF00FF40')
+        self.fill_color_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Entry(self.fill_color_frame, textvariable=self.fill_color_var, width=10).pack(side='left', padx=5)
+        ttk.Button(self.fill_color_frame, text="Pick", command=lambda: self.pick_color(self.fill_color_var)).pack(side='left')
+
+        self.toggle_sparkline_fill()  # Show/hide fill color controls
+
+        # Background Color
+        row += 1
+        ttk.Label(self.specific_frame, text="Background:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
+        color_frame2 = ttk.Frame(self.specific_frame)
+        color_frame2.grid(row=row, column=1, sticky='w', pady=5)
+
+        self.sparkline_bg_var = tk.StringVar(value=self.existing_widget.get('background_color', '#000000') if self.existing_widget and self.existing_widget['type']=='sparkline' else '#000000')
+        self.sparkline_bg_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Entry(color_frame2, textvariable=self.sparkline_bg_var, width=10).pack(side='left', padx=5)
+        ttk.Button(color_frame2, text="Pick", command=lambda: self.pick_color(self.sparkline_bg_var)).pack(side='left')
+
+        # Text Color
+        row += 1
+        ttk.Label(self.specific_frame, text="Text Color:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
+        color_frame3 = ttk.Frame(self.specific_frame)
+        color_frame3.grid(row=row, column=1, sticky='w', pady=5)
+
+        self.sparkline_text_color_var = tk.StringVar(value=self.existing_widget.get('text_color', '#FFFFFF') if self.existing_widget and self.existing_widget['type']=='sparkline' else '#FFFFFF')
+        self.sparkline_text_color_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Entry(color_frame3, textvariable=self.sparkline_text_color_var, width=10).pack(side='left', padx=5)
+        ttk.Button(color_frame3, text="Pick", command=lambda: self.pick_color(self.sparkline_text_color_var)).pack(side='left')
+
+        # Grid Color
+        row += 1
+        ttk.Label(self.specific_frame, text="Grid Color:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
+        color_frame4 = ttk.Frame(self.specific_frame)
+        color_frame4.grid(row=row, column=1, sticky='w', pady=5)
+
+        self.grid_color_var = tk.StringVar(value=self.existing_widget.get('grid_color', '#333333') if self.existing_widget and self.existing_widget['type']=='sparkline' else '#333333')
+        self.grid_color_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Entry(color_frame4, textvariable=self.grid_color_var, width=10).pack(side='left', padx=5)
+        ttk.Button(color_frame4, text="Pick", command=lambda: self.pick_color(self.grid_color_var)).pack(side='left')
+
+        # Data Range
+        row += 1
+        ttk.Label(self.specific_frame, text="Data Range:", font=('Arial', 9, 'bold')).grid(row=row, column=0, columnspan=2, sticky='w', pady=(10,5))
+
+        row += 1
+        range_frame = ttk.Frame(self.specific_frame)
+        range_frame.grid(row=row, column=0, columnspan=2, sticky='w', pady=5)
+
+        ttk.Label(range_frame, text="Min:").pack(side='left', padx=(0,5))
+        self.min_value_var = tk.IntVar(value=self.existing_widget.get('min_value', 0) if self.existing_widget and self.existing_widget['type']=='sparkline' else 0)
+        self.min_value_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Spinbox(range_frame, from_=-1000, to=1000, textvariable=self.min_value_var, width=10).pack(side='left', padx=5)
+
+        ttk.Label(range_frame, text="Max:").pack(side='left', padx=(20,5))
+        self.max_value_var = tk.IntVar(value=self.existing_widget.get('max_value', 100) if self.existing_widget and self.existing_widget['type']=='sparkline' else 100)
+        self.max_value_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Spinbox(range_frame, from_=-1000, to=10000, textvariable=self.max_value_var, width=10).pack(side='left', padx=5)
+
+        # Number of Points
+        row += 1
+        ttk.Label(self.specific_frame, text="Number of Points:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
+        self.num_points_var = tk.IntVar(value=self.existing_widget.get('num_points', 30) if self.existing_widget and self.existing_widget['type']=='sparkline' else 30)
+        self.num_points_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Spinbox(self.specific_frame, from_=10, to=60, textvariable=self.num_points_var, width=10).grid(row=row, column=1, sticky='w', pady=5)
+
+        # Display Options
+        row += 1
+        ttk.Label(self.specific_frame, text="Display Options:", font=('Arial', 9, 'bold')).grid(row=row, column=0, columnspan=2, sticky='w', pady=(10,5))
+
+        row += 1
+        # Handle existing widget - properly get boolean value
+        default_show_current = True
+        if self.existing_widget and self.existing_widget.get('type') == 'sparkline':
+            # Ensure we get a proper boolean value
+            default_show_current = self.existing_widget.get('show_current_value', True)
+            # Handle string values from JSON (shouldn't happen, but just in case)
+            if isinstance(default_show_current, str):
+                default_show_current = default_show_current.lower() in ('true', '1', 'yes')
+        self.show_current_var = tk.BooleanVar(value=default_show_current)
+        self.show_current_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Checkbutton(self.specific_frame, text="Show Current Value", variable=self.show_current_var).grid(row=row, column=0, columnspan=2, sticky='w', pady=5)
+
+    def toggle_sparkline_fill(self):
+        """Show/hide fill color based on checkbox"""
+        if self.use_fill_var.get():
+            self.fill_label.grid(row=self.fill_row, column=0, sticky='w', pady=5, padx=(0,10))
+            self.fill_color_frame.grid(row=self.fill_row, column=1, sticky='w', pady=5)
+        else:
+            self.fill_label.grid_forget()
+            self.fill_color_frame.grid_forget()
+        # Update preview after showing/hiding
+        self.update_preview()
+
     def toggle_gradient(self):
         """Show/hide gradient end color based on checkbox"""
         if self.gradient_var.get():
@@ -1909,6 +2323,21 @@ class WidgetDialog:
             config['corner_radius'] = self.corner_radius_var.get()
             config['show_percentage'] = self.show_percentage_var.get()
             config['show_label'] = self.show_label_var.get()
+
+        elif config['type'] == 'sparkline':
+            config['label'] = self.sparkline_label_var.get()
+            config['line_color'] = self.line_color_var.get()
+            config['fill_color'] = self.fill_color_var.get() if self.use_fill_var.get() else None
+            config['num_points'] = self.num_points_var.get()
+            config['min_value'] = self.min_value_var.get()
+            config['max_value'] = self.max_value_var.get()
+            config['show_current_value'] = self.show_current_var.get()
+            config['background_color'] = self.sparkline_bg_var.get()
+            config['text_color'] = self.sparkline_text_color_var.get()
+            config['grid_color'] = self.grid_color_var.get()
+            
+            print(f"[SAVE SPARKLINE] Saving config: label='{config['label']}', line_color={config['line_color']}, "
+                  f"fill={config['fill_color']}, show_current={config['show_current_value']}")
 
         self.result = config
         self.dialog.destroy()

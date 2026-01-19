@@ -332,6 +332,132 @@ class ProgressBarWidget(Widget):
             draw.text((text_x, text_y), percent_text, fill=text_color, font=font)
 
 
+class SparklineWidget(Widget):
+    """Mini line graph widget for showing trends over time"""
+
+    def render(self, draw, image, data):
+        x = self.position['x']
+        y = self.position['y']
+        width = self.size['width']
+        height = self.size['height']
+
+        # Widget properties
+        data_source = self.config.get('data_source', 'cpu_percent')
+        label = self.config.get('label', '')
+        line_color = self.config.get('line_color', '#00FF00')
+        fill_color = self.config.get('fill_color', None)
+        bg_color = self.config.get('background_color', '#000000')
+        text_color = self.config.get('text_color', '#FFFFFF')
+        grid_color = self.config.get('grid_color', '#333333')
+        num_points = self.config.get('num_points', 30)
+        min_value = self.config.get('min_value', 0)
+        max_value = self.config.get('max_value', 100)
+        show_current = self.config.get('show_current_value', True)
+        
+        # DEBUG LOGGING
+        print(f"[SPARKLINE RENDER] label='{label}', line_color={line_color}, "
+              f"fill_color={fill_color}, show_current={show_current}")
+
+        # Get historical data
+        from monitor import get_data_history
+        history = get_data_history(data_source, num_points)
+
+        # Draw background
+        draw.rectangle([x, y, x + width, y + height], fill=bg_color)
+
+        # If insufficient data, show placeholder
+        if len(history) < 2:
+            try:
+                font = ImageFont.truetype("C:\\Windows\\Fonts\\arial.ttf", 12)
+            except:
+                font = ImageFont.load_default()
+            draw.text((x + 5, y + 5), f"{label}: Collecting...",
+                     fill=text_color, font=font)
+            return
+
+        # Reserve space for label and current value at top
+        label_height = 16 if label or show_current else 0
+        graph_y = y + label_height
+        graph_height = height - label_height - 5  # 5px padding at bottom
+
+        # Reserve space for axis labels (left: min/max values)
+        axis_width = 35  # Space for axis labels like "100" or "0"
+        graph_x = x + axis_width
+        graph_width = width - axis_width - 5  # 5px right padding
+
+        # Load fonts
+        try:
+            title_font = ImageFont.truetype("C:\\Windows\\Fonts\\arial.ttf", 12)
+            value_font = ImageFont.truetype("C:\\Windows\\Fonts\\arial.ttf", 10)
+            axis_font = ImageFont.truetype("C:\\Windows\\Fonts\\arial.ttf", 9)
+        except:
+            title_font = ImageFont.load_default()
+            value_font = ImageFont.load_default()
+            axis_font = ImageFont.load_default()
+
+        # Draw label and current value in header
+        if label:
+            draw.text((x + 5, y + 2), label, fill=text_color, font=title_font)
+
+        if show_current and len(history) > 0:
+            current = history[-1]
+            current_text = f"{current:.1f}"
+            bbox = draw.textbbox((0, 0), current_text, font=value_font)
+            text_width = bbox[2] - bbox[0]
+            draw.text((x + width - text_width - 5, y + 2),
+                     current_text, fill=text_color, font=value_font)
+
+        # Draw horizontal grid lines and axis labels
+        num_grid_lines = 3  # Min, middle, max
+        for i in range(num_grid_lines):
+            # Calculate y position for this grid line
+            factor = i / (num_grid_lines - 1)
+            grid_y_pos = graph_y + graph_height - (factor * graph_height)
+            
+            # Draw grid line
+            draw.line([(graph_x, grid_y_pos), (graph_x + graph_width, grid_y_pos)],
+                     fill=grid_color, width=1)
+            
+            # Draw axis label
+            axis_value = min_value + (max_value - min_value) * factor
+            axis_text = f"{axis_value:.0f}"
+            bbox = draw.textbbox((0, 0), axis_text, font=axis_font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            # Position label to the left of the graph, vertically centered on grid line
+            draw.text((x + axis_width - text_width - 3, grid_y_pos - text_height // 2),
+                     axis_text, fill=text_color, font=axis_font)
+
+        # Calculate point positions for the line graph
+        points = []
+        x_step = graph_width / max(len(history) - 1, 1)
+
+        for i, value in enumerate(history):
+            # Clamp and normalize value
+            value_clamped = max(min_value, min(max_value, value))
+            value_normalized = (value_clamped - min_value) / max(max_value - min_value, 1)
+
+            point_x = graph_x + i * x_step
+            point_y = graph_y + graph_height - (value_normalized * graph_height)
+            points.append((point_x, point_y))
+
+        # Draw filled area if fill_color specified
+        if fill_color and len(points) >= 2:
+            polygon_points = points + [
+                (points[-1][0], graph_y + graph_height),
+                (points[0][0], graph_y + graph_height)
+            ]
+            draw.polygon(polygon_points, fill=fill_color)
+
+        # Draw the line graph
+        if len(points) >= 2:
+            draw.line(points, fill=line_color, width=2)
+
+        # Draw a border around the graph area for clarity
+        draw.rectangle([graph_x, graph_y, graph_x + graph_width, graph_y + graph_height],
+                      outline=grid_color, width=1)
+
+
 # Widget factory function
 def create_widget(config):
     """
@@ -352,6 +478,8 @@ def create_widget(config):
         return TextWidget(config)
     elif widget_type == 'progress_bar':
         return ProgressBarWidget(config)
+    elif widget_type == 'sparkline':
+        return SparklineWidget(config)
     else:
         raise ValueError(f"Unknown widget type: {widget_type}")
 

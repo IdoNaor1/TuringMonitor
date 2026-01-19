@@ -24,7 +24,8 @@
       "Bash(\".venv/Scripts/pyinstaller.exe\" TuringControlCenter.spec --clean)",
       "Bash(\".venv/Scripts/pip.exe\" install pystray)",
       "Bash(.venvScriptspython.exe gui_app.py)",
-      "Bash(python gui_app.py:*)"
+      "Bash(python gui_app.py:*)",
+      "Bash(.venvScriptspython.exe -m pip install requests yfinance)"
     ]
   }
 }

@@ -7,6 +7,8 @@ import psutil
 from datetime import datetime
 import socket
 import platform
+from data_history import DataHistory
+from external_data import ExternalDataManager
 
 
 def get_cpu_usage():
@@ -160,6 +162,16 @@ def get_component_temperatures():
 _last_net_io = None
 _last_net_time = None
 
+# Global disk I/O counter storage for speed calculation
+_last_disk_io = None
+_last_disk_io_time = None
+
+# Global historical data manager for sparklines
+_data_history = DataHistory(max_points=30)
+
+# Global external data manager
+_external_data_manager = ExternalDataManager()
+
 
 def get_network_speed():
     """
@@ -245,6 +257,115 @@ def format_uptime():
         return "0d 0h 0m"
 
 
+def get_cpu_frequency():
+    """
+    Get CPU frequency details
+
+    Returns:
+        dict: Dictionary containing:
+            - cpu_freq_mhz: Current frequency in MHz (0 if unavailable)
+            - cpu_freq_ghz: Current frequency in GHz (0 if unavailable)
+    """
+    try:
+        freq = psutil.cpu_freq()
+        if freq:
+            return {
+                'cpu_freq_mhz': round(freq.current, 1),
+                'cpu_freq_ghz': round(freq.current / 1000, 2)
+            }
+    except (AttributeError, NotImplementedError):
+        pass
+    return {'cpu_freq_mhz': 0, 'cpu_freq_ghz': 0}
+
+
+def get_per_core_cpu():
+    """
+    Get per-core CPU usage
+
+    Returns:
+        dict: Dictionary containing:
+            - cpu_core_0, cpu_core_1, etc.: Individual core percentages
+            - cpu_core_count: Number of CPU cores
+            - cpu_cores_avg: Average CPU usage across all cores
+    """
+    try:
+        per_cpu = psutil.cpu_percent(percpu=True, interval=0.1)
+        result = {}
+        for i, usage in enumerate(per_cpu):
+            result[f'cpu_core_{i}'] = round(usage, 1)
+        result['cpu_core_count'] = len(per_cpu)
+        result['cpu_cores_avg'] = round(sum(per_cpu) / len(per_cpu), 1)
+        return result
+    except Exception:
+        return {}
+
+
+def get_disk_io_speed():
+    """
+    Calculate disk read/write speeds in MB/s and KB/s
+
+    Returns:
+        dict: Dictionary containing:
+            - disk_read_mbs: Read speed in MB/s
+            - disk_write_mbs: Write speed in MB/s
+            - disk_read_kbs: Read speed in KB/s
+            - disk_write_kbs: Write speed in KB/s
+    """
+    global _last_disk_io, _last_disk_io_time
+
+    try:
+        import time
+        current_io = psutil.disk_io_counters()
+        current_time = time.time()
+
+        if _last_disk_io is None or _last_disk_io_time is None:
+            # First call - initialize counters
+            _last_disk_io = current_io
+            _last_disk_io_time = current_time
+            return {
+                'disk_read_mbs': 0.0,
+                'disk_write_mbs': 0.0,
+                'disk_read_kbs': 0.0,
+                'disk_write_kbs': 0.0
+            }
+
+        # Calculate time delta
+        time_delta = current_time - _last_disk_io_time
+        if time_delta == 0:
+            return {
+                'disk_read_mbs': 0.0,
+                'disk_write_mbs': 0.0,
+                'disk_read_kbs': 0.0,
+                'disk_write_kbs': 0.0
+            }
+
+        # Calculate bytes transferred
+        bytes_read = current_io.read_bytes - _last_disk_io.read_bytes
+        bytes_write = current_io.write_bytes - _last_disk_io.write_bytes
+
+        # Calculate speeds
+        read_mbs = (bytes_read / time_delta) / (1024 * 1024)
+        write_mbs = (bytes_write / time_delta) / (1024 * 1024)
+
+        # Update stored values
+        _last_disk_io = current_io
+        _last_disk_io_time = current_time
+
+        return {
+            'disk_read_mbs': round(read_mbs, 2),
+            'disk_write_mbs': round(write_mbs, 2),
+            'disk_read_kbs': round(read_mbs * 1024, 1),
+            'disk_write_kbs': round(write_mbs * 1024, 1)
+        }
+    except Exception:
+        return {
+            'disk_read_mbs': 0.0,
+            'disk_write_mbs': 0.0,
+            'disk_read_kbs': 0.0,
+            'disk_write_kbs': 0.0
+        }
+
+
 def get_all_metrics():
     """
     Get all system metrics in a single call
@@ -253,6 +374,10 @@ def get_all_metrics():
         dict: Dictionary containing all metrics:
             - cpu_percent: CPU usage (%)
             - cpu_name: CPU model name
+            - cpu_freq_mhz: CPU frequency in MHz
+            - cpu_freq_ghz: CPU frequency in GHz
+            - cpu_core_0, cpu_core_1, etc.: Per-core CPU usage (%)
+            - cpu_core_count: Number of CPU cores
             - ram_used: RAM used (GB)
             - ram_total: RAM total (GB)
             - ram_percent: RAM usage (%)
@@ -261,11 +386,16 @@ def get_all_metrics():
             - disk_c_used: C: drive used (GB)
             - disk_c_total: C: drive total (GB)
             - disk_c_percent: C: drive usage (%)
+            - disk_read_mbs: Disk read speed (MB/s)
+            - disk_write_mbs: Disk write speed (MB/s)
+            - disk_read_kbs: Disk read speed (KB/s)
+            - disk_write_kbs: Disk write speed (KB/s)
             - gpu_percent: GPU usage (%) - 0 if unavailable
             - gpu_memory_percent: GPU memory usage (%) - 0 if unavailable
             - gpu_temp: GPU temperature (°C) - 0 if unavailable
             - gpu_name: GPU model name - "N/A" if unavailable
             - cpu_temp: CPU temperature (°C) - 0 if unavailable
+            - temp_{sensor_name}: All available temperature sensors
             - net_upload_kbs: Network upload speed (KB/s)
             - net_download_kbs: Network download speed (KB/s)
             - net_upload_mbs: Network upload speed (MB/s)
@@ -278,6 +408,9 @@ def get_all_metrics():
     gpu = get_gpu_usage()
     network = get_network_speed()
     temps = get_component_temperatures()
+    cpu_freq = get_cpu_frequency()
+    per_core = get_per_core_cpu()
+    disk_io = get_disk_io_speed()
 
     metrics = {
         'cpu_percent': get_cpu_usage(),
@@ -299,6 +432,15 @@ def get_all_metrics():
         'uptime': format_uptime(),
         'hostname': socket.gethostname()
     }
+
+    # Add CPU frequency metrics
+    metrics.update(cpu_freq)
+
+    # Add per-core CPU metrics
+    metrics.update(per_core)
+
+    # Add disk I/O speeds
+    metrics.update(disk_io)
 
     # Add GPU metrics if available
     if gpu:
@@ -326,7 +468,98 @@ def get_all_metrics():
             break
     metrics['cpu_temp'] = cpu_temp
 
+    # Expose all temperature sensors as data sources
+    for sensor_name, temp_value in temps.items():
+        # Sanitize sensor name for use as data source key
+        clean_name = sensor_name.lower().replace(' ', '_').replace('-', '_')
+        metrics[f'temp_{clean_name}'] = round(temp_value, 1)
+
+    # Record historical data for sparkline-enabled metrics
+    # Core metrics
+    _data_history.add_data_point('cpu_percent', metrics['cpu_percent'])
+    _data_history.add_data_point('ram_percent', metrics['ram_percent'])
+    _data_history.add_data_point('ram_used', metrics['ram_used'])
+    _data_history.add_data_point('ram_total', metrics['ram_total'])
+    _data_history.add_data_point('gpu_percent', metrics['gpu_percent'])
+    _data_history.add_data_point('gpu_memory_percent', metrics['gpu_memory_percent'])
+    
+    # Network
+    _data_history.add_data_point('net_upload_mbs', metrics['net_upload_mbs'])
+    _data_history.add_data_point('net_download_mbs', metrics['net_download_mbs'])
+    _data_history.add_data_point('net_upload_kbs', metrics['net_upload_kbs'])
+    _data_history.add_data_point('net_download_kbs', metrics['net_download_kbs'])
+    
+    # Disk
+    _data_history.add_data_point('disk_read_mbs', metrics['disk_read_mbs'])
+    _data_history.add_data_point('disk_write_mbs', metrics['disk_write_mbs'])
+    _data_history.add_data_point('disk_c_percent', metrics['disk_c_percent'])
+    
+    # CPU frequency and per-core (if available)
+    if 'cpu_freq_mhz' in metrics:
+        _data_history.add_data_point('cpu_freq_mhz', metrics['cpu_freq_mhz'])
+        _data_history.add_data_point('cpu_freq_ghz', metrics['cpu_freq_ghz'])
+    
+    # Per-core CPU (track up to 16 cores)
+    for i in range(16):
+        core_key = f'cpu_core_{i}'
+        if core_key in metrics:
+            _data_history.add_data_point(core_key, metrics[core_key])
+    
+    if 'cpu_cores_avg' in metrics:
+        _data_history.add_data_point('cpu_cores_avg', metrics['cpu_cores_avg'])
+    
+    # Temperatures
+    if metrics['cpu_temp'] > 0:
+        _data_history.add_data_point('cpu_temp', metrics['cpu_temp'])
+    if metrics['gpu_temp'] > 0:
+        _data_history.add_data_point('gpu_temp', metrics['gpu_temp'])
+    
+    # All temperature sensors
+    for key, value in metrics.items():
+        if key.startswith('temp_') and isinstance(value, (int, float)):
+            _data_history.add_data_point(key, value)
+
+    # Add external data if available
+    external_data = _external_data_manager.get_data()
+    metrics.update(external_data)
+    
+    # Track external data for sparklines (weather, stocks, crypto)
+    for key, value in external_data.items():
+        if isinstance(value, (int, float)):
+            _data_history.add_data_point(key, value)
+
     return metrics
+
+
+def get_data_history(metric_name, num_points=30):
+    """
+    Public API for widgets to access historical data
+
+    Args:
+        metric_name: Name of metric (e.g., 'gpu_percent')
+        num_points: Number of recent points to return (default: 30)
+
+    Returns:
+        list: List of values (empty if metric not found)
+    """
+    return _data_history.get_history(metric_name, num_points)
+
+
+def initialize_external_data(config):
+    """
+    Initialize and start external data fetching
+
+    Args:
+        config: Dictionary with external data configuration
+                (weather, stocks, crypto settings)
+    """
+    _external_data_manager.configure(config)
+    _external_data_manager.start()
+
+
+def stop_external_data():
+    """Stop external data fetching"""
+    _external_data_manager.stop()
 
 
 # For testing
