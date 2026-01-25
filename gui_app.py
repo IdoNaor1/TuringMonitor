@@ -279,6 +279,48 @@ class TuringControlCenter:
         brightness_scale.grid(row=1, column=1, sticky='w', padx=5)
         ttk.Button(display_frame, text="Apply", command=self.set_brightness).grid(row=1, column=2, padx=5)
 
+        # Incremental Rendering Settings
+        incr_frame = ttk.LabelFrame(tab, text="Incremental Rendering", padding=15)
+        incr_frame.pack(fill='x', padx=10, pady=10)
+
+        # Enable incremental rendering checkbox
+        self.incremental_enabled = tk.BooleanVar(value=getattr(cfg, 'INCREMENTAL_RENDERING', True))
+        incr_check = ttk.Checkbutton(
+            incr_frame, 
+            text="Enable Incremental Rendering (only update changed regions)",
+            variable=self.incremental_enabled
+        )
+        incr_check.grid(row=0, column=0, columnspan=3, sticky='w', pady=5)
+        
+        # Help text
+        help_label = ttk.Label(
+            incr_frame,
+            text="Reduces update time from ~1600ms to ~200-300ms by only sending changed screen regions.",
+            foreground='gray',
+            font=('Arial', 8)
+        )
+        help_label.grid(row=1, column=0, columnspan=3, sticky='w', padx=20, pady=(0, 10))
+
+        # Full render interval
+        ttk.Label(incr_frame, text="Full Render Interval (sec):").grid(row=2, column=0, sticky='w', pady=5, padx=(20, 5))
+        self.full_render_interval_var = tk.StringVar(value=str(getattr(cfg, 'FULL_RENDER_INTERVAL', 300)))
+        ttk.Entry(incr_frame, textvariable=self.full_render_interval_var, width=10).grid(row=2, column=1, sticky='w', padx=5)
+        ttk.Label(
+            incr_frame,
+            text="(Force full screen refresh every N seconds to prevent artifacts)",
+            foreground='gray',
+            font=('Arial', 8)
+        ).grid(row=2, column=2, sticky='w', padx=5)
+
+        # Debug incremental
+        self.debug_incremental = tk.BooleanVar(value=getattr(cfg, 'DEBUG_INCREMENTAL', False))
+        debug_check = ttk.Checkbutton(
+            incr_frame,
+            text="Enable Debug Logging (log region count and pixel totals)",
+            variable=self.debug_incremental
+        )
+        debug_check.grid(row=3, column=0, columnspan=3, sticky='w', pady=5, padx=20)
+
         # Save Settings
         ttk.Button(tab, text="💾 Save All Settings", command=self.save_settings).pack(pady=20)
 
@@ -672,6 +714,9 @@ class TuringControlCenter:
 
             # Main loop
             frame_count = 0
+            last_full_render = 0  # Track last full render for periodic refresh
+            self.log(f"Incremental rendering: {'Enabled' if cfg.INCREMENTAL_RENDERING else 'Disabled'}")
+
             while self.is_running:
                 try:
                     loop_start = time.time()
@@ -679,14 +724,29 @@ class TuringControlCenter:
                     # Get metrics
                     data = get_all_metrics()
 
-                    # Render image
-                    image = self.renderer.render(data)
-
                     # Display (check if display is still connected)
                     if self.display is None:
                         self.log("Display disconnected, exiting loop...")
                         break
-                    success = self.display.display_image(image)
+
+                    if cfg.INCREMENTAL_RENDERING:
+                        # Incremental rendering - only update changed regions
+                        force_full = (time.time() - last_full_render) > cfg.FULL_RENDER_INTERVAL
+                        dirty_regions = self.renderer.render_incremental(data, force_full=force_full)
+                        success = self.display.display_dirty_regions(dirty_regions)
+
+                        # Track full render time
+                        if force_full or (len(dirty_regions) == 1 and dirty_regions[0]['x'] == 0):
+                            last_full_render = time.time()
+
+                        # Debug logging for incremental mode
+                        if cfg.DEBUG_INCREMENTAL and frame_count % 10 == 0:
+                            total_px = sum(r['width'] * r['height'] for r in dirty_regions)
+                            self.log(f"Incremental: {len(dirty_regions)} regions, {total_px} px")
+                    else:
+                        # Full frame rendering
+                        image = self.renderer.render(data)
+                        success = self.display.display_image(image)
 
                     # Calculate loop time and adjust sleep
                     loop_time = (time.time() - loop_start) * 1000  # Convert to ms
@@ -1487,13 +1547,19 @@ class TuringControlCenter:
             cfg.COM_PORT = self.port_var.get()
             cfg.BAUD_RATE = int(self.baud_var.get())
             cfg.UPDATE_INTERVAL_MS = int(self.interval_var.get())
+            cfg.INCREMENTAL_RENDERING = self.incremental_enabled.get()
+            cfg.FULL_RENDER_INTERVAL = int(self.full_render_interval_var.get())
+            cfg.DEBUG_INCREMENTAL = self.debug_incremental.get()
 
             # Save to JSON file for persistence
             settings_path = os.path.join(os.path.expanduser("~"), ".turing_monitor_settings.json")
             settings = {
                 "COM_PORT": cfg.COM_PORT,
                 "BAUD_RATE": cfg.BAUD_RATE,
-                "UPDATE_INTERVAL_MS": cfg.UPDATE_INTERVAL_MS
+                "UPDATE_INTERVAL_MS": cfg.UPDATE_INTERVAL_MS,
+                "INCREMENTAL_RENDERING": cfg.INCREMENTAL_RENDERING,
+                "FULL_RENDER_INTERVAL": cfg.FULL_RENDER_INTERVAL,
+                "DEBUG_INCREMENTAL": cfg.DEBUG_INCREMENTAL
             }
             with open(settings_path, 'w') as f:
                 json.dump(settings, f, indent=2)
@@ -1502,6 +1568,8 @@ class TuringControlCenter:
             self.log(f"COM Port: {cfg.COM_PORT}")
             self.log(f"Baud Rate: {cfg.BAUD_RATE}")
             self.log(f"Update Interval: {cfg.UPDATE_INTERVAL_MS}ms")
+            self.log(f"Incremental Rendering: {cfg.INCREMENTAL_RENDERING}")
+            self.log(f"Full Render Interval: {cfg.FULL_RENDER_INTERVAL}s")
             messagebox.showinfo("Success", "Settings saved! Changes will take effect immediately.")
         except Exception as e:
             self.log(f"Error saving settings: {e}")
@@ -1729,6 +1797,46 @@ class WidgetDialog:
         self.height_var.trace_add('write', lambda *args: self.update_preview())
         ttk.Spinbox(size_frame, from_=10, to=480, textvariable=self.height_var, width=10).pack(side='left', padx=5)
 
+        # Update Interval (for incremental rendering)
+        row += 1
+        ttk.Label(scrollable_frame, text="Update Interval:", font=('Arial', 10, 'bold')).grid(row=row, column=0, columnspan=2, sticky='w', pady=(15,5))
+        
+        row += 1
+        interval_frame = ttk.Frame(scrollable_frame)
+        interval_frame.grid(row=row, column=0, columnspan=2, sticky='w', pady=5)
+        
+        ttk.Label(interval_frame, text="Seconds:").pack(side='left', padx=(0,5))
+        
+        # Smart defaults: image widgets are static, use very long interval
+        default_interval = 1.0
+        if self.existing_widget:
+            default_interval = self.existing_widget.get('update_interval', 1.0)
+        elif self.type_var.get() == 'image':
+            default_interval = 3600.0  # 1 hour for static images
+        
+        self.update_interval_var = tk.DoubleVar(value=default_interval)
+        self.update_interval_spinbox = ttk.Spinbox(interval_frame, from_=0.1, to=3600, increment=0.5, textvariable=self.update_interval_var, width=10)
+        self.update_interval_spinbox.pack(side='left', padx=5)
+        
+        help_label = ttk.Label(
+            interval_frame,
+            text="(How often to check for changes - lower = more responsive, higher = less CPU)",
+            foreground='gray',
+            font=('Arial', 8)
+        )
+        help_label.pack(side='left', padx=10)
+        
+        # Note for static content
+        row += 1
+        note_label = ttk.Label(
+            scrollable_frame,
+            text="Note: Image widgets are static and rarely need updates. Use a high value (3600s) for best performance.",
+            foreground='#666666',
+            font=('Arial', 8),
+            wraplength=400
+        )
+        note_label.grid(row=row, column=0, columnspan=2, sticky='w', pady=(0, 5), padx=(0, 5))
+
         # Type-specific properties frame
         row += 1
         ttk.Separator(scrollable_frame, orient='horizontal').grid(row=row, column=0, columnspan=2, sticky='ew', pady=15)
@@ -1946,7 +2054,8 @@ class WidgetDialog:
                 'size': {
                     'width': self.width_var.get(),
                     'height': self.height_var.get()
-                }
+                },
+                'update_interval': self.update_interval_var.get() if hasattr(self, 'update_interval_var') else 1.0
             }
 
             # Add type-specific properties (check if attributes exist)
@@ -2034,6 +2143,16 @@ class WidgetDialog:
             widget.destroy()
 
         widget_type = self.type_var.get()
+
+        # Update default update_interval based on type
+        if hasattr(self, 'update_interval_var'):
+            if widget_type == 'image':
+                # Static content - use long interval (1 hour)
+                self.update_interval_var.set(3600.0)
+            elif widget_type in ['text', 'progress_bar', 'sparkline']:
+                # Dynamic content - use short interval if currently set high
+                if self.update_interval_var.get() > 60:
+                    self.update_interval_var.set(1.0)
 
         if widget_type == 'text':
             self.create_text_widget_fields()
@@ -2448,7 +2567,8 @@ class WidgetDialog:
             'id': self.id_var.get().strip(),
             'position': {'x': self.x_var.get(), 'y': self.y_var.get()},
             'size': {'width': self.width_var.get(), 'height': self.height_var.get()},
-            'data_source': self.data_source_var.get()
+            'data_source': self.data_source_var.get(),
+            'update_interval': self.update_interval_var.get() if hasattr(self, 'update_interval_var') else 1.0
         }
 
         # Add type-specific properties

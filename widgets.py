@@ -245,6 +245,12 @@ class Widget:
         self.position = config.get('position', {'x': 0, 'y': 0})
         self.size = config.get('size', {'width': 100, 'height': 50})
 
+        # Dirty tracking for incremental rendering
+        self._last_data_hash = None
+        self._is_dirty = True  # Start dirty - needs initial render
+        self._last_update_time = 0
+        self.update_interval = config.get('update_interval', 1)  # seconds
+
     def render(self, draw, image, data):
         """
         Render the widget on the image
@@ -256,9 +262,89 @@ class Widget:
         """
         raise NotImplementedError("Subclasses must implement render()")
 
+    def get_relevant_data(self, data):
+        """
+        Extract only the data this widget depends on.
+        Override in subclasses for more specific data extraction.
+
+        Args:
+            data: Full metrics dictionary
+
+        Returns:
+            The relevant data value(s) for this widget
+        """
+        data_source = self.config.get('data_source')
+        return data.get(data_source) if data_source else None
+
+    def needs_update(self, data, current_time):
+        """
+        Check if widget needs re-rendering.
+
+        Args:
+            data: Current metrics data
+            current_time: Current time.time() value
+
+        Returns:
+            bool: True if widget should be re-rendered
+        """
+        # Force update if never rendered
+        if self._is_dirty:
+            return True
+
+        # Check time-based update interval
+        if current_time - self._last_update_time < self.update_interval:
+            return False
+
+        # Check if data changed
+        relevant_data = self.get_relevant_data(data)
+        data_hash = hash(str(relevant_data))
+
+        if data_hash != self._last_data_hash:
+            self._last_data_hash = data_hash
+            return True
+
+        return False
+
+    def mark_clean(self, current_time):
+        """Mark widget as up-to-date after rendering."""
+        self._is_dirty = False
+        self._last_update_time = current_time
+
+    def mark_dirty(self):
+        """Force widget to re-render on next update."""
+        self._is_dirty = True
+
+    def render_to_image(self, data):
+        """
+        Render widget to its own PIL Image for incremental rendering.
+
+        Args:
+            data: Metrics data dictionary
+
+        Returns:
+            PIL.Image: Widget rendered to RGBA image
+        """
+        w = self.size['width']
+        h = self.size['height']
+        widget_img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(widget_img)
+
+        # Temporarily shift position to origin for relative drawing
+        original_pos = self.position.copy()
+        self.position = {'x': 0, 'y': 0}
+        self.render(draw, widget_img, data)
+        self.position = original_pos
+
+        return widget_img
+
 
 class TextWidget(Widget):
     """Enhanced text display widget with font styling support"""
+
+    def get_relevant_data(self, data):
+        """TextWidget depends on its data_source value."""
+        data_source = self.config.get('data_source', 'time')
+        return data.get(data_source)
 
     def render(self, draw, image, data):
         x = self.position['x']
@@ -312,6 +398,11 @@ class TextWidget(Widget):
 
 class ProgressBarWidget(Widget):
     """Enhanced progress bar widget with gradients, borders, and rounded corners"""
+
+    def get_relevant_data(self, data):
+        """ProgressBarWidget depends on its data_source percentage value."""
+        data_source = self.config.get('data_source', 'cpu_percent')
+        return data.get(data_source)
 
     def render(self, draw, image, data):
         x = self.position['x']
@@ -420,6 +511,14 @@ class ProgressBarWidget(Widget):
 
 class SparklineWidget(Widget):
     """Mini line graph widget for showing trends over time"""
+
+    def get_relevant_data(self, data):
+        """SparklineWidget depends on historical data, which changes every frame."""
+        data_source = self.config.get('data_source', 'cpu_percent')
+        num_points = self.config.get('num_points', 30)
+        from monitor import get_data_history
+        # Return tuple of history for hashing
+        return tuple(get_data_history(data_source, num_points))
 
     def render(self, draw, image, data):
         x = self.position['x']
@@ -594,7 +693,15 @@ class ImageWidget(Widget):
         self.processed_image = None  # Cache the processed image
         self.render_position = None   # Cache the render position
         self._load_image()
-        
+
+    def needs_update(self, data, current_time):
+        """ImageWidget only renders once (static content)."""
+        if self._is_dirty:
+            self._is_dirty = False
+            self._last_update_time = current_time
+            return True
+        return False
+
     def _load_image(self):
         """Load and pre-process image from disk"""
         if not self.image_path:

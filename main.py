@@ -94,11 +94,13 @@ def main():
         print("Debug mode enabled")
 
     print(f"\nUpdate interval: {cfg.UPDATE_INTERVAL_MS}ms")
+    print(f"Incremental rendering: {'Enabled' if cfg.INCREMENTAL_RENDERING else 'Disabled'}")
     print("Press Ctrl+C to stop\n")
     print("-" * 70)
 
     # Main rendering loop
     frame_count = 0
+    last_full_render = 0  # Track last full render for periodic refresh
     try:
         while True:
             loop_start = time.time()
@@ -106,11 +108,24 @@ def main():
             # Collect system metrics
             data = monitor.get_all_metrics()
 
-            # Render dashboard image
-            image = rend.render(data)
+            if cfg.INCREMENTAL_RENDERING:
+                # Incremental rendering - only update changed regions
+                force_full = (time.time() - last_full_render) > cfg.FULL_RENDER_INTERVAL
+                dirty_regions = rend.render_incremental(data, force_full=force_full)
+                success = display.display_dirty_regions(dirty_regions)
 
-            # Send to display
-            success = display.display_image(image)
+                # Track full render time
+                if force_full or (len(dirty_regions) == 1 and dirty_regions[0]['x'] == 0):
+                    last_full_render = time.time()
+
+                # Debug logging for incremental mode
+                if cfg.DEBUG_INCREMENTAL:
+                    total_px = sum(r['width'] * r['height'] for r in dirty_regions)
+                    print(f"Incremental: {len(dirty_regions)} regions, {total_px} pixels")
+            else:
+                # Full frame rendering
+                image = rend.render(data)
+                success = display.display_image(image)
 
             # Log progress
             frame_count += 1

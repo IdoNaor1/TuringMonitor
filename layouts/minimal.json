@@ -19,8 +19,11 @@
         "height": 80
       },
       "data_source": "time",
-      "format": "%H:%M:%S",
+      "update_interval": 1.0,
       "font_size": 48,
+      "font_family": "arial",
+      "bold": false,
+      "italic": false,
       "color": "#FFFFFF",
       "align": "center"
     },
@@ -53,10 +56,18 @@
         "height": 100
       },
       "data_source": "cpu_percent",
+      "update_interval": 0.5,
       "label": "CPU",
       "bar_color": "#00FF00",
       "background_color": "#222222",
-      "text_color": "#FFFFFF"
+      "text_color": "#FFFFFF",
+      "gradient": false,
+      "border_width": 0,
+      "border_color": "#FFFFFF",
+      "corner_radius": 0,
+      "show_percentage": true,
+      "show_label": true,
+      "display_component_name": false
     },
     {
       "type": "progress_bar",
@@ -70,10 +81,18 @@
         "height": 80
       },
       "data_source": "disk_c_percent",
+      "update_interval": 2.0,
       "label": "C: Drive",
       "bar_color": "#FFA500",
       "background_color": "#222222",
-      "text_color": "#FFFFFF"
+      "text_color": "#FFFFFF",
+      "gradient": false,
+      "border_width": 0,
+      "border_color": "#FFFFFF",
+      "corner_radius": 0,
+      "show_percentage": true,
+      "show_label": true,
+      "display_component_name": false
     },
     {
       "type": "image",
@@ -87,6 +106,7 @@
         "height": 80
       },
       "data_source": "time",
+      "update_interval": 3600.0,
       "image_path": "C:/Users/Ido/Downloads/claude-color.png",
       "scale_mode": "fit",
       "opacity": 1.0,

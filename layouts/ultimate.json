@@ -19,9 +19,11 @@
         "height": 50
       },
       "data_source": "time",
+      "update_interval": 1.0,
       "font_size": 48,
       "font_family": "arial",
       "bold": true,
+      "italic": false,
       "color": "#00d4ff",
       "align": "center"
     },
@@ -37,6 +39,7 @@
         "height": 20
       },
       "data_source": "date",
+      "update_interval": 360.0,
       "font_size": 19,
       "font_family": "arial",
       "bold": false,
@@ -52,10 +55,11 @@
         "y": 95
       },
       "size": {
-        "width": 300,
+        "width": 260,
         "height": 55
       },
       "data_source": "cpu_percent",
+      "update_interval": 3.8,
       "label": "CPU",
       "bar_color": "#ff2a6d",
       "background_color": "#1a1a1a",
@@ -73,15 +77,16 @@
       "type": "text",
       "id": "cpu_temp_text",
       "position": {
-        "x": 30,
-        "y": 94
+        "x": 279,
+        "y": 113
       },
       "size": {
-        "width": 60,
+        "width": 40,
         "height": 20
       },
       "data_source": "cpu_temp",
-      "font_size": 16,
+      "update_interval": 15.0,
+      "font_size": 19,
       "font_family": "arial",
       "bold": true,
       "italic": false,
@@ -96,10 +101,11 @@
         "y": 170
       },
       "size": {
-        "width": 300,
+        "width": 260,
         "height": 55
       },
       "data_source": "gpu_percent",
+      "update_interval": 2.7,
       "label": "GPU",
       "bar_color": "#05ffa1",
       "background_color": "#1a1a1a",
@@ -117,15 +123,16 @@
       "type": "text",
       "id": "gpu_temp_text",
       "position": {
-        "x": 30,
-        "y": 168
+        "x": 279,
+        "y": 188
       },
       "size": {
-        "width": 60,
+        "width": 40,
         "height": 20
       },
       "data_source": "gpu_temp",
-      "font_size": 16,
+      "update_interval": 15.0,
+      "font_size": 19,
       "font_family": "arial",
       "bold": true,
       "italic": false,
@@ -140,10 +147,11 @@
         "y": 250
       },
       "size": {
-        "width": 300,
+        "width": 260,
         "height": 55
       },
       "data_source": "ram_percent",
+      "update_interval": 3.2,
       "label": "RAM",
       "bar_color": "#ffeb3b",
       "background_color": "#1a1a1a",
@@ -161,15 +169,16 @@
       "type": "text",
       "id": "ram_temp_avg_text",
       "position": {
-        "x": 30,
-        "y": 248
+        "x": 279,
+        "y": 268
       },
       "size": {
-        "width": 60,
+        "width": 40,
         "height": 20
       },
       "data_source": "ram_temp_avg",
-      "font_size": 16,
+      "update_interval": 15.0,
+      "font_size": 19,
       "font_family": "arial",
       "bold": true,
       "italic": false,
@@ -188,6 +197,7 @@
         "height": 50
       },
       "data_source": "disk_c_percent",
+      "update_interval": 30.3,
       "label": "Samsung SSD 990 PRO",
       "bar_color": "#b388ff",
       "background_color": "#1a1a1a",
@@ -205,14 +215,15 @@
       "type": "text",
       "id": "nvme_temp_text",
       "position": {
-        "x": 6,
-        "y": 399
+        "x": 176,
+        "y": 342
       },
       "size": {
         "width": 60,
         "height": 20
       },
       "data_source": "nvme_temp",
+      "update_interval": 20.3,
       "font_size": 16,
       "font_family": "arial",
       "bold": true,
@@ -224,14 +235,15 @@
       "type": "text",
       "id": "disk_used_text",
       "position": {
-        "x": 12,
-        "y": 390
+        "x": 215,
+        "y": 333
       },
       "size": {
-        "width": 145,
+        "width": 100,
         "height": 20
       },
       "data_source": "disk_c_used",
+      "update_interval": 20.2,
       "font_size": 16,
       "font_family": "arial",
       "bold": false,
@@ -243,14 +255,15 @@
       "type": "text",
       "id": "disk_total_text",
       "position": {
-        "x": 10,
-        "y": 410
+        "x": 213,
+        "y": 353
       },
       "size": {
-        "width": 145,
+        "width": 100,
         "height": 20
       },
       "data_source": "disk_c_total",
+      "update_interval": 20.1,
       "font_size": 15,
       "font_family": "arial",
       "bold": false,
@@ -260,40 +273,17 @@
     },
     {
       "type": "sparkline",
-      "id": "network_download_sparkline",
-      "position": {
-        "x": 170,
-        "y": 321
-      },
-      "size": {
-        "width": 145,
-        "height": 75
-      },
-      "data_source": "net_download_mbs",
-      "label": "Network D MB/s",
-      "line_color": "#00d4ff",
-      "fill_color": "#00d4ff40",
-      "num_points": 25,
-      "min_value": 0,
-      "max_value": 1000,
-      "show_current_value": true,
-      "background_color": "#000000",
-      "text_color": "#ffffff",
-      "grid_color": "#222222",
-      "display_component_name": false
-    },
-    {
-      "type": "sparkline",
       "id": "diskWrite",
       "position": {
-        "x": 170,
-        "y": 402
+        "x": 130,
+        "y": 380
       },
       "size": {
-        "width": 145,
-        "height": 75
+        "width": 180,
+        "height": 95
       },
       "data_source": "disk_write_mbs",
+      "update_interval": 6.7,
       "label": "SSD W MB/s",
       "line_color": "#00d4ff",
       "fill_color": "#00d4ff40",
@@ -318,6 +308,7 @@
         "height": 50
       },
       "data_source": "uptime",
+      "update_interval": 60.0,
       "font_size": 20,
       "font_family": "arial",
       "bold": false,

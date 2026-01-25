@@ -283,6 +283,85 @@ class TuringDisplay:
                 traceback.print_exc()
             return False
 
+    def display_partial_image(self, image, x, y):
+        """
+        Display a partial image at specific screen coordinates.
+
+        Args:
+            image: PIL Image (any size within screen bounds)
+            x, y: Top-left position on screen
+
+        Returns:
+            bool: Success status
+        """
+        if not self.connected:
+            return False
+
+        try:
+            with self.lock:
+                width, height = image.size
+
+                # Validate bounds
+                if x < 0 or y < 0 or x + width > self.width or y + height > self.height:
+                    print(f"Error: Region ({x},{y},{width},{height}) out of bounds")
+                    return False
+
+                # Convert to RGB565
+                if image.mode != 'RGB':
+                    image = image.convert('RGB')
+                rgb565_data = self._image_to_rgb565(image)
+
+                # Build header with partial coordinates
+                ex = x + width - 1
+                ey = y + height - 1
+
+                header = bytearray(6)
+                header[0] = x >> 2
+                header[1] = ((x & 3) << 6) + (y >> 4)
+                header[2] = ((y & 15) << 4) + (ex >> 6)
+                header[3] = ((ex & 63) << 2) + (ey >> 8)
+                header[4] = ey & 255
+                header[5] = Commands.DISPLAY_BITMAP
+
+                self.serial.write(header)
+                time.sleep(0.001)
+                self.serial.write(rgb565_data)
+                self.serial.flush()
+
+                if cfg.DEBUG:
+                    print(f"Partial update: ({x},{y}) {width}x{height} = {len(rgb565_data)} bytes")
+
+                return True
+        except Exception as e:
+            print(f"Error displaying partial image: {e}")
+            return False
+
+    def display_dirty_regions(self, dirty_regions):
+        """
+        Display multiple dirty regions from incremental rendering.
+
+        Args:
+            dirty_regions: List from Renderer.render_incremental()
+
+        Returns:
+            bool: Success status
+        """
+        if not dirty_regions:
+            return True
+
+        # Check if this is a full-frame update
+        if len(dirty_regions) == 1:
+            r = dirty_regions[0]
+            if r['x'] == 0 and r['y'] == 0 and r['width'] == self.width and r['height'] == self.height:
+                return self.display_image(r['image'])
+
+        success = True
+        for region in dirty_regions:
+            result = self.display_partial_image(region['image'], region['x'], region['y'])
+            success = success and result
+
+        return success
+
     def clear_screen(self):
         """
         Clear the display (fill with black)
