@@ -3,7 +3,8 @@ Widget System for Turing Smart Screen Monitor
 Base widget class and built-in widget implementations
 """
 
-from PIL import ImageDraw, ImageFont, Image
+from PIL import ImageDraw, ImageFont, Image, ImageSequence, ImageOps
+import os
 
 
 def get_component_name_for_data_source(data_source, data):
@@ -571,6 +572,126 @@ class SparklineWidget(Widget):
                       outline=grid_color, width=1)
 
 
+
+class ImageWidget(Widget):
+    """
+    Widget for displaying images
+    """
+    def __init__(self, config):
+        sys_config = config.copy()
+        # Ensure size is set, default to 100x100 if not provided
+        if 'size' not in sys_config:
+            sys_config['size'] = {'width': 100, 'height': 100}
+            
+        super().__init__(sys_config)
+        
+        self.image_path = config.get('image_path', '')
+        self.scale_mode = config.get('scale_mode', 'fit') # fit, fill, stretch, center
+        self.opacity = config.get('opacity', 1.0) # 0.0 to 1.0
+        self.rotation = config.get('rotation', 0) # 0, 90, 180, 270
+        
+        self.image = None
+        self.processed_image = None  # Cache the processed image
+        self.render_position = None   # Cache the render position
+        self._load_image()
+        
+    def _load_image(self):
+        """Load and pre-process image from disk"""
+        if not self.image_path:
+            return
+            
+        # Try to find the image file
+        # Check absolute path first
+        full_path = self.image_path
+        if not os.path.exists(full_path):
+            # Check relative to layouts directory
+            import config as cfg
+            full_path = os.path.join(os.path.dirname(__file__), 'layouts', self.image_path)
+            
+        if not os.path.exists(full_path):
+            # Check relative to assets directory if it existed, but let's just try relative to cwd
+            full_path = os.path.abspath(self.image_path)
+            
+        if os.path.exists(full_path):
+            try:
+                img = Image.open(full_path)
+                self.image = img.convert('RGBA')
+                # Pre-process the image once
+                self._process_image()
+            except Exception as e:
+                print(f"[ImageWidget] Error loading image {full_path}: {e}")
+        else:
+            print(f"[ImageWidget] Image not found: {self.image_path}")
+            
+    def _process_image(self):
+        """Pre-process the image (rotation, scaling, opacity) - called once"""
+        if not self.image:
+            return
+            
+        current_img = self.image
+            
+        # Rotate if needed
+        if self.rotation != 0:
+            current_img = current_img.rotate(-self.rotation, expand=True)
+
+        # Target size
+        target_w = self.size['width']
+        target_h = self.size['height']
+        
+        # Scale image according to mode
+        img_w, img_h = current_img.size
+        
+        final_img = None
+        
+        if self.scale_mode == 'stretch':
+            final_img = current_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+            
+        elif self.scale_mode == 'fit':
+            # Maintain aspect ratio, fit inside
+            ratio = min(target_w / img_w, target_h / img_h)
+            new_w = int(img_w * ratio)
+            new_h = int(img_h * ratio)
+            final_img = current_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            
+        elif self.scale_mode == 'fill':
+            # Maintain aspect ratio, cover area (crop)
+            ratio = max(target_w / img_w, target_h / img_h)
+            new_w = int(img_w * ratio)
+            new_h = int(img_h * ratio)
+            resized = current_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            
+            # Center crop
+            left = (new_w - target_w) // 2
+            top = (new_h - target_h) // 2
+            final_img = resized.crop((left, top, left + target_w, top + target_h))
+            
+        elif self.scale_mode == 'center':
+            # No scaling, just center
+            final_img = current_img
+            
+        # Apply opacity if needed
+        if self.opacity < 1.0:
+            # Process alpha channel
+            final_img.putalpha(Image.eval(final_img.getchannel('A'), lambda x: int(x * self.opacity)))
+            
+        # Cache the processed image
+        self.processed_image = final_img
+        
+        # Calculate and cache the render position
+        fw, fh = final_img.size
+        x_offset = self.position['x'] + (target_w - fw) // 2
+        y_offset = self.position['y'] + (target_h - fh) // 2
+        self.render_position = (x_offset, y_offset)
+            
+    def render(self, draw, image, data):
+        """Render the pre-processed image - very fast, just paste"""
+        if not self.processed_image:
+            return
+        
+        # Simply paste the pre-processed image
+        image.paste(self.processed_image, self.render_position, self.processed_image)
+
+
 # Widget factory function
 def create_widget(config):
     """
@@ -593,6 +714,8 @@ def create_widget(config):
         return ProgressBarWidget(config)
     elif widget_type == 'sparkline':
         return SparklineWidget(config)
+    elif widget_type == 'image':
+        return ImageWidget(config)
     else:
         raise ValueError(f"Unknown widget type: {widget_type}")
 

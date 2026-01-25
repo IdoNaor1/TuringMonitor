@@ -515,15 +515,30 @@ class TuringControlCenter:
         new_y = actual_y - self.drag_offset_y
 
         # Clamp to canvas bounds
-        widget = self.current_layout['widgets'][self.dragging_widget]
-        max_x = 320 - widget['size']['width']
-        max_y = 480 - widget['size']['height']
+        widget_config = self.current_layout['widgets'][self.dragging_widget]
+        max_x = 320 - widget_config['size']['width']
+        max_y = 480 - widget_config['size']['height']
         new_x = max(0, min(max_x, new_x))
         new_y = max(0, min(max_y, new_y))
 
-        # Update widget position
-        widget['position']['x'] = new_x
-        widget['position']['y'] = new_y
+        # Update widget position in layout config
+        widget_config['position']['x'] = new_x
+        widget_config['position']['y'] = new_y
+
+        # Also update the cached widget instance position directly (avoid rebuild!)
+        if hasattr(self, 'cached_renderer') and self.cached_renderer is not None:
+            if self.dragging_widget < len(self.cached_renderer.widget_instances):
+                cached_widget = self.cached_renderer.widget_instances[self.dragging_widget]
+                cached_widget.position = {'x': new_x, 'y': new_y}
+                # For ImageWidget, also update the cached render_position
+                if hasattr(cached_widget, 'render_position') and hasattr(cached_widget, 'processed_image'):
+                    if cached_widget.processed_image:
+                        fw, fh = cached_widget.processed_image.size
+                        target_w = cached_widget.size['width']
+                        target_h = cached_widget.size['height']
+                        x_offset = new_x + (target_w - fw) // 2
+                        y_offset = new_y + (target_h - fh) // 2
+                        cached_widget.render_position = (x_offset, y_offset)
 
         # Redraw preview
         self.render_preview()
@@ -854,24 +869,16 @@ class TuringControlCenter:
             return
 
         try:
-            # Create temporary renderer
-            temp_renderer = Renderer()
-            temp_renderer.layout = self.current_layout
-            temp_renderer.widget_instances = []
-
-            # Create widget instances
-            for widget_config in self.current_layout.get('widgets', []):
-                try:
-                    widget = widgets.create_widget(widget_config)
-                    temp_renderer.widget_instances.append(widget)
-                except Exception as e:
-                    print(f"Preview widget error: {e}")
+            # Create renderer and widget instances only when cache is missing
+            # Cache is invalidated explicitly by _invalidate_preview_cache()
+            if not hasattr(self, 'cached_renderer') or self.cached_renderer is None:
+                self._rebuild_preview_cache()
 
             # Get current metrics for live preview
             data = get_all_metrics()
 
             # Render at actual size (320x480)
-            image_actual = temp_renderer.render(data)
+            image_actual = self.cached_renderer.render(data)
 
             # Scale to 1.5x for display (480x720)
             image_scaled = image_actual.resize((480, 720), Image.Resampling.LANCZOS)
@@ -888,6 +895,24 @@ class TuringControlCenter:
 
         except Exception as e:
             self.log(f"Preview render error: {e}")
+    
+    def _rebuild_preview_cache(self):
+        """Rebuild the cached renderer and widget instances"""
+        self.cached_renderer = Renderer()
+        self.cached_renderer.layout = self.current_layout
+        self.cached_renderer.widget_instances = []
+
+        # Create widget instances
+        for widget_config in self.current_layout.get('widgets', []):
+            try:
+                widget = widgets.create_widget(widget_config)
+                self.cached_renderer.widget_instances.append(widget)
+            except Exception as e:
+                print(f"Preview widget error: {e}")
+    
+    def _invalidate_preview_cache(self):
+        """Invalidate the cached widgets so they're recreated on next render"""
+        self.cached_renderer = None
 
     def draw_widget_selection(self):
         """Draw selection boxes around widgets on preview canvas"""
@@ -983,6 +1008,9 @@ class TuringControlCenter:
 
             self.layout_file_path = layout_file
             self.layout_modified = False
+
+            # Invalidate cached widgets so they're recreated
+            self._invalidate_preview_cache()
 
             self.log(f"Loaded layout: {layout_name}")
 
@@ -1082,6 +1110,7 @@ class TuringControlCenter:
             # Add widget to layout
             self.current_layout['widgets'].append(dialog.result)
             self.layout_modified = True
+            self._invalidate_preview_cache()
             self.refresh_widget_list()
             self.render_preview()
             self.log(f"Added widget: {dialog.result['id']}")
@@ -1111,6 +1140,7 @@ class TuringControlCenter:
                 self.log(f"Updated widget: {dialog.result['id']}")
 
             self.layout_modified = True
+            self._invalidate_preview_cache()
             self.refresh_widget_list()
             self.render_preview()
 
@@ -1134,6 +1164,7 @@ class TuringControlCenter:
         if response:
             del self.current_layout['widgets'][widget_index]
             self.layout_modified = True
+            self._invalidate_preview_cache()
             self.refresh_widget_list()
             self.render_preview()
             self.log(f"Removed widget: {widget_id}")
@@ -1219,7 +1250,7 @@ class TuringControlCenter:
                     errors.append(f"Widget {widget_num}: Unknown data source '{widget['data_source']}'")
 
             # Validate widget type
-            if widget['type'] not in ['text', 'progress_bar', 'sparkline']:
+            if widget['type'] not in ['text', 'progress_bar', 'sparkline', 'image']:
                 errors.append(f"Widget {widget_num}: Unknown widget type '{widget['type']}'")
 
             # Validate color codes (if present)
@@ -1633,7 +1664,7 @@ class WidgetDialog:
         row = 1
         ttk.Label(scrollable_frame, text="Widget Type:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
         self.type_var = tk.StringVar(value=self.existing_widget.get('type', 'text') if self.existing_widget else 'text')
-        type_combo = ttk.Combobox(scrollable_frame, textvariable=self.type_var, values=['text', 'progress_bar', 'sparkline'], state='readonly', width=25)
+        type_combo = ttk.Combobox(scrollable_frame, textvariable=self.type_var, values=['text', 'progress_bar', 'sparkline', 'image'], state='readonly', width=25)
         type_combo.grid(row=row, column=1, sticky='w', pady=5)
         type_combo.bind('<<ComboboxSelected>>', self.on_type_change)
 
@@ -1737,7 +1768,69 @@ class WidgetDialog:
 
             # Import required modules
             from PIL import Image, ImageTk, ImageDraw
-            from widgets import TextWidget, ProgressBarWidget, SparklineWidget
+            from widgets import TextWidget, ProgressBarWidget, SparklineWidget, ImageWidget
+
+            # For ImageWidget, only rebuild if type or image properties changed (not position/size)
+            # For other widgets, rebuild on any change
+            need_rebuild = False
+            if not hasattr(self, '_cached_widget') or not hasattr(self, '_cached_widget_type'):
+                need_rebuild = True
+            elif self._cached_widget_type != widget_config['type']:
+                need_rebuild = True
+            elif widget_config['type'] == 'image':
+                # Only rebuild image widget if image-specific properties changed
+                old_img_props = getattr(self, '_cached_image_props', None)
+                new_img_props = (
+                    widget_config.get('image_path', ''),
+                    widget_config.get('scale_mode', 'fit'),
+                    widget_config.get('opacity', 1.0),
+                    widget_config.get('rotation', 0),
+                    widget_config.get('size', {}).get('width', 100),
+                    widget_config.get('size', {}).get('height', 100)
+                )
+                if old_img_props != new_img_props:
+                    need_rebuild = True
+                    self._cached_image_props = new_img_props
+            else:
+                # For non-image widgets, use hash comparison
+                config_hash = str(widget_config)
+                if not hasattr(self, '_cached_config_hash') or self._cached_config_hash != config_hash:
+                    need_rebuild = True
+                    self._cached_config_hash = config_hash
+            
+            if need_rebuild:
+                # Create the widget
+                if widget_config['type'] == 'text':
+                    self._cached_widget = TextWidget(widget_config)
+                elif widget_config['type'] == 'progress_bar':
+                    self._cached_widget = ProgressBarWidget(widget_config)
+                elif widget_config['type'] == 'sparkline':
+                    self._cached_widget = SparklineWidget(widget_config)
+                    # Provide sample historical data for sparkline preview
+                    self.setup_sample_history(widget_config['data_source'])
+                elif widget_config['type'] == 'image':
+                    self._cached_widget = ImageWidget(widget_config)
+                else:
+                    return
+                
+                self._cached_widget_type = widget_config['type']
+            else:
+                # Update position/size without rebuilding (for image widget during drag)
+                if hasattr(self._cached_widget, 'position'):
+                    self._cached_widget.position = widget_config['position']
+                if hasattr(self._cached_widget, 'size'):
+                    self._cached_widget.size = widget_config['size']
+                # Update render_position for ImageWidget
+                if widget_config['type'] == 'image' and hasattr(self._cached_widget, 'render_position'):
+                    if self._cached_widget.processed_image:
+                        fw, fh = self._cached_widget.processed_image.size
+                        target_w = widget_config['size']['width']
+                        target_h = widget_config['size']['height']
+                        x_offset = widget_config['position']['x'] + (target_w - fw) // 2
+                        y_offset = widget_config['position']['y'] + (target_h - fh) // 2
+                        self._cached_widget.render_position = (x_offset, y_offset)
+            
+            widget = self._cached_widget
 
             # Create a preview image (320x480)
             preview_img = Image.new('RGB', (320, 480), color='black')
@@ -1749,18 +1842,6 @@ class WidgetDialog:
 
             # Create ImageDraw object for rendering
             draw = ImageDraw.Draw(preview_img)
-
-            # Create and render the widget
-            if widget_config['type'] == 'text':
-                widget = TextWidget(widget_config)
-            elif widget_config['type'] == 'progress_bar':
-                widget = ProgressBarWidget(widget_config)
-            elif widget_config['type'] == 'sparkline':
-                widget = SparklineWidget(widget_config)
-                # Provide sample historical data for sparkline preview
-                self.setup_sample_history(widget_config['data_source'])
-            else:
-                return
 
             # Get sample data for preview (need to pass all data as dict)
             data = {widget_config['data_source']: self.get_sample_data(widget_config['data_source'])}
@@ -1922,13 +2003,8 @@ class WidgetDialog:
                     config['text_color'] = self.sparkline_text_color_var.get()
                     config['grid_color'] = self.grid_color_var.get()
                     config['display_component_name'] = self.sparkline_display_component_name_var.get() if hasattr(self, 'sparkline_display_component_name_var') else False
-                    
-                    # DEBUG LOGGING
-                    print(f"[SPARKLINE CONFIG] label='{config['label']}', line_color={config['line_color']}, "
-                          f"fill_color={config['fill_color']}, show_current_value={config['show_current_value']}")
                 else:
                     # Default values for sparkline
-                    print("[SPARKLINE CONFIG] Using default values - sparkline_label_var not found!")
                     config['label'] = 'GPU'
                     config['line_color'] = '#FF00FF'
                     config['fill_color'] = None
@@ -1939,6 +2015,12 @@ class WidgetDialog:
                     config['background_color'] = '#000000'
                     config['text_color'] = '#FFFFFF'
                     config['grid_color'] = '#333333'
+            
+            elif config['type'] == 'image':
+                config['image_path'] = self.image_path_var.get()
+                config['scale_mode'] = self.scale_mode_var.get()
+                config['opacity'] = self.opacity_var.get()
+                config['rotation'] = self.rotation_var.get()
 
             return config
         except Exception as e:
@@ -1959,6 +2041,8 @@ class WidgetDialog:
             self.create_progress_bar_fields()
         elif widget_type == 'sparkline':
             self.create_sparkline_widget_fields()
+        elif widget_type == 'image':
+            self.create_image_widget_fields()
 
         # Update preview after fields are created
         self.dialog.after(50, self.update_preview)
@@ -2251,6 +2335,51 @@ class WidgetDialog:
         self.sparkline_display_component_name_var.trace_add('write', lambda *args: self.update_preview())
         ttk.Checkbutton(self.specific_frame, text="Display Component Name", variable=self.sparkline_display_component_name_var).grid(row=row, column=0, columnspan=2, sticky='w', pady=5)
 
+    def create_image_widget_fields(self):
+        """Create fields specific to ImageWidget"""
+        ttk.Label(self.specific_frame, text="Image Widget Properties", font=('Arial', 10, 'bold')).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0,10))
+
+        # Image Path
+        row = 1
+        ttk.Label(self.specific_frame, text="Image Path:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
+        path_frame = ttk.Frame(self.specific_frame)
+        path_frame.grid(row=row, column=1, sticky='w', pady=5)
+        
+        self.image_path_var = tk.StringVar(value=self.existing_widget.get('image_path', '') if self.existing_widget and self.existing_widget['type']=='image' else '')
+        self.image_path_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Entry(path_frame, textvariable=self.image_path_var, width=20).pack(side='left', padx=5)
+        ttk.Button(path_frame, text="Browse", command=self.pick_image).pack(side='left')
+
+        # Scale Mode
+        row += 1
+        ttk.Label(self.specific_frame, text="Scale Mode:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
+        self.scale_mode_var = tk.StringVar(value=self.existing_widget.get('scale_mode', 'fit') if self.existing_widget and self.existing_widget['type']=='image' else 'fit')
+        self.scale_mode_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Combobox(self.specific_frame, textvariable=self.scale_mode_var, values=['fit', 'fill', 'stretch', 'center'], state='readonly', width=25).grid(row=row, column=1, sticky='w', pady=5)
+
+        # Opacity
+        row += 1
+        ttk.Label(self.specific_frame, text="Opacity (0.0-1.0):").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
+        self.opacity_var = tk.DoubleVar(value=self.existing_widget.get('opacity', 1.0) if self.existing_widget and self.existing_widget['type']=='image' else 1.0)
+        self.opacity_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Spinbox(self.specific_frame, from_=0.0, to=1.0, increment=0.1, textvariable=self.opacity_var, width=10).grid(row=row, column=1, sticky='w', pady=5)
+
+        # Rotation
+        row += 1
+        ttk.Label(self.specific_frame, text="Rotation:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
+        self.rotation_var = tk.IntVar(value=self.existing_widget.get('rotation', 0) if self.existing_widget and self.existing_widget['type']=='image' else 0)
+        self.rotation_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Combobox(self.specific_frame, textvariable=self.rotation_var, values=[0, 90, 180, 270], state='readonly', width=25).grid(row=row, column=1, sticky='w', pady=5)
+
+    def pick_image(self):
+        """Pick image file"""
+        filename = filedialog.askopenfilename(
+            title="Select Image",
+            filetypes=[("Image Files", "*.png *.jpg *.jpeg *.bmp *.gif")]
+        )
+        if filename:
+            self.image_path_var.set(filename)
+
     def toggle_sparkline_fill(self):
         """Show/hide fill color based on checkbox"""
         if self.use_fill_var.get():
@@ -2358,9 +2487,12 @@ class WidgetDialog:
             config['text_color'] = self.sparkline_text_color_var.get()
             config['grid_color'] = self.grid_color_var.get()
             config['display_component_name'] = self.sparkline_display_component_name_var.get()
-            
-            print(f"[SAVE SPARKLINE] Saving config: label='{config['label']}', line_color={config['line_color']}, "
-                  f"fill={config['fill_color']}, show_current={config['show_current_value']}")
+
+        elif config['type'] == 'image':
+            config['image_path'] = self.image_path_var.get()
+            config['scale_mode'] = self.scale_mode_var.get()
+            config['opacity'] = self.opacity_var.get()
+            config['rotation'] = self.rotation_var.get()
 
         self.result = config
         self.dialog.destroy()

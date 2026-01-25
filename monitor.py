@@ -7,8 +7,87 @@ import psutil
 from datetime import datetime
 import socket
 import platform
+import time
+import urllib.request
+import json
 from data_history import DataHistory
 from external_data import ExternalDataManager
+
+
+# ============== LibreHardwareMonitor Cache ==============
+# Cache LHM data to avoid multiple HTTP requests per update cycle
+_lhm_cache = None
+_lhm_cache_time = 0
+_lhm_cache_ttl = 0.5  # Cache for 500ms (half a second)
+_lhm_available = None  # None = unknown, True = available, False = unavailable
+_lhm_check_interval = 10  # Check availability every 10 seconds when unavailable
+
+def _get_lhm_data():
+    """
+    Get LibreHardwareMonitor data with caching.
+    Returns cached data if fresh, otherwise fetches new data.
+    Returns None if LHM is unavailable.
+    """
+    global _lhm_cache, _lhm_cache_time, _lhm_available
+    
+    current_time = time.time()
+    
+    # Check if LHM was previously marked unavailable
+    if _lhm_available is False:
+        # Only retry every _lhm_check_interval seconds
+        if current_time - _lhm_cache_time < _lhm_check_interval:
+            return None
+    
+    # Check if cache is still valid
+    if _lhm_cache is not None and (current_time - _lhm_cache_time) < _lhm_cache_ttl:
+        return _lhm_cache
+    
+    # Fetch new data
+    try:
+        url = "http://localhost:8085/data.json"
+        with urllib.request.urlopen(url, timeout=0.5) as response:
+            _lhm_cache = json.loads(response.read().decode())
+            _lhm_cache_time = current_time
+            _lhm_available = True
+            return _lhm_cache
+    except Exception:
+        _lhm_cache = None
+        _lhm_cache_time = current_time
+        _lhm_available = False
+        return None
+
+
+def _search_lhm_node(node, predicate, result_extractor):
+    """
+    Generic recursive search through LHM data tree.
+    
+    Args:
+        node: Current node to search
+        predicate: Function that returns True if this is the node we want
+        result_extractor: Function that extracts data from the found node
+    
+    Returns:
+        Result from result_extractor or None if not found
+    """
+    if node is None:
+        return None
+    
+    if isinstance(node, dict):
+        if predicate(node):
+            return result_extractor(node)
+        
+        for child in node.get('Children', []):
+            result = _search_lhm_node(child, predicate, result_extractor)
+            if result is not None:
+                return result
+    
+    elif isinstance(node, list):
+        for item in node:
+            result = _search_lhm_node(item, predicate, result_extractor)
+            if result is not None:
+                return result
+    
+    return None
 
 
 def get_cpu_usage():
@@ -89,103 +168,100 @@ def get_gpu_usage():
         Returns None if no GPU data available
     """
     try:
-        import urllib.request
-        import json
+        # Use cached LHM data
+        data = _get_lhm_data()
+        if data is None:
+            return None
         
-        # Try to fetch from LibreHardwareMonitor web server
-        url = "http://localhost:8085/data.json"
-        with urllib.request.urlopen(url, timeout=1) as response:
-            data = json.loads(response.read().decode())
+        # Recursively search for GPU data
+        def find_gpu_data(node):
+            text = node.get('Text', '')
+            hardware_id = node.get('HardwareId', '').lower()
             
-            # Recursively search for GPU data
-            def find_gpu_data(node):
-                text = node.get('Text', '')
-                hardware_id = node.get('HardwareId', '').lower()
+            # Check if this is a GPU node (NVIDIA or AMD)
+            if ('nvidia' in text.lower() or 'geforce' in text.lower() or 'rtx' in text.lower() or 
+                'radeon' in text.lower() or 'amd' in text.lower()) and \
+               ('gpu-nvidia' in hardware_id or 'gpu-amd' in hardware_id or 'gpu-intel' in hardware_id):
                 
-                # Check if this is a GPU node (NVIDIA or AMD)
-                if ('nvidia' in text.lower() or 'geforce' in text.lower() or 'rtx' in text.lower() or 
-                    'radeon' in text.lower() or 'amd' in text.lower()) and \
-                   ('gpu-nvidia' in hardware_id or 'gpu-amd' in hardware_id or 'gpu-intel' in hardware_id):
-                    
-                    gpu_data = {'gpu_name': text}
-                    
-                    # Parse all children to extract metrics
-                    for child in node.get('Children', []):
-                        child_text = child.get('Text', '')
-                        
-                        # Temperatures
-                        if 'Temperature' in child_text:
-                            for sensor in child.get('Children', []):
-                                sensor_text = sensor.get('Text', '')
-                                value_str = sensor.get('Value', '0.0')
-                                
-                                if 'GPU Core' in sensor_text and 'gpu_temp' not in gpu_data:
-                                    gpu_data['gpu_temp'] = float(value_str.replace('°C', '').replace('°', '').strip())
-                                elif 'Hot Spot' in sensor_text or 'Hotspot' in sensor_text:
-                                    gpu_data['gpu_hotspot_temp'] = float(value_str.replace('°C', '').replace('°', '').strip())
-                        
-                        # Load/Usage
-                        elif 'Load' in child_text:
-                            for sensor in child.get('Children', []):
-                                sensor_text = sensor.get('Text', '')
-                                value_str = sensor.get('Value', '0.0 %')
-                                
-                                if 'GPU Core' in sensor_text and 'gpu_percent' not in gpu_data:
-                                    gpu_data['gpu_percent'] = float(value_str.replace('%', '').strip())
-                                elif 'GPU Memory' in sensor_text and 'gpu_memory_percent' not in gpu_data:
-                                    gpu_data['gpu_memory_percent'] = float(value_str.replace('%', '').strip())
-                        
-                        # Clocks
-                        elif 'Clock' in child_text:
-                            for sensor in child.get('Children', []):
-                                sensor_text = sensor.get('Text', '')
-                                value_str = sensor.get('Value', '0.0 MHz')
-                                
-                                if 'GPU Core' in sensor_text:
-                                    gpu_data['gpu_clock'] = float(value_str.replace('MHz', '').strip())
-                                elif 'GPU Memory' in sensor_text:
-                                    gpu_data['gpu_memory_clock'] = float(value_str.replace('MHz', '').strip())
-                        
-                        # Power
-                        elif 'Power' in child_text:
-                            for sensor in child.get('Children', []):
-                                sensor_text = sensor.get('Text', '')
-                                value_str = sensor.get('Value', '0.0 W')
-                                
-                                if 'GPU' in sensor_text or 'Package' in sensor_text:
-                                    gpu_data['gpu_power'] = float(value_str.replace('W', '').strip())
-                        
-                        # Memory Data (MB)
-                        elif 'Data' in child_text or 'SmallData' in child_text:
-                            for sensor in child.get('Children', []):
-                                sensor_text = sensor.get('Text', '')
-                                value_str = sensor.get('Value', '0.0 MB')
-                                
-                                if 'Memory Used' in sensor_text:
-                                    gpu_data['gpu_memory_used'] = float(value_str.replace('MB', '').replace('GB', '').strip())
-                                    if 'GB' in value_str:
-                                        gpu_data['gpu_memory_used'] *= 1024
-                                elif 'Memory Total' in sensor_text:
-                                    gpu_data['gpu_memory_total'] = float(value_str.replace('MB', '').replace('GB', '').strip())
-                                    if 'GB' in value_str:
-                                        gpu_data['gpu_memory_total'] *= 1024
-                    
-                    # Only return if we got at least temperature or load data
-                    if 'gpu_temp' in gpu_data or 'gpu_percent' in gpu_data:
-                        # Set defaults for missing values
-                        gpu_data.setdefault('gpu_percent', 0.0)
-                        gpu_data.setdefault('gpu_memory_percent', 0.0)
-                        gpu_data.setdefault('gpu_temp', 0.0)
-                        return gpu_data
+                gpu_data = {'gpu_name': text}
                 
-                # Recursively search children
+                # Parse all children to extract metrics
                 for child in node.get('Children', []):
-                    result = find_gpu_data(child)
-                    if result:
-                        return result
-                return None
+                    child_text = child.get('Text', '')
+                    
+                    # Temperatures
+                    if 'Temperature' in child_text:
+                        for sensor in child.get('Children', []):
+                            sensor_text = sensor.get('Text', '')
+                            value_str = sensor.get('Value', '0.0')
+                            
+                            if 'GPU Core' in sensor_text and 'gpu_temp' not in gpu_data:
+                                gpu_data['gpu_temp'] = float(value_str.replace('°C', '').replace('°', '').strip())
+                            elif 'Hot Spot' in sensor_text or 'Hotspot' in sensor_text:
+                                gpu_data['gpu_hotspot_temp'] = float(value_str.replace('°C', '').replace('°', '').strip())
+                    
+                    # Load/Usage
+                    elif 'Load' in child_text:
+                        for sensor in child.get('Children', []):
+                            sensor_text = sensor.get('Text', '')
+                            value_str = sensor.get('Value', '0.0 %')
+                            
+                            if 'GPU Core' in sensor_text and 'gpu_percent' not in gpu_data:
+                                gpu_data['gpu_percent'] = float(value_str.replace('%', '').strip())
+                            elif 'GPU Memory' in sensor_text and 'gpu_memory_percent' not in gpu_data:
+                                gpu_data['gpu_memory_percent'] = float(value_str.replace('%', '').strip())
+                    
+                    # Clocks
+                    elif 'Clock' in child_text:
+                        for sensor in child.get('Children', []):
+                            sensor_text = sensor.get('Text', '')
+                            value_str = sensor.get('Value', '0.0 MHz')
+                            
+                            if 'GPU Core' in sensor_text:
+                                gpu_data['gpu_clock'] = float(value_str.replace('MHz', '').strip())
+                            elif 'GPU Memory' in sensor_text:
+                                gpu_data['gpu_memory_clock'] = float(value_str.replace('MHz', '').strip())
+                    
+                    # Power
+                    elif 'Power' in child_text:
+                        for sensor in child.get('Children', []):
+                            sensor_text = sensor.get('Text', '')
+                            value_str = sensor.get('Value', '0.0 W')
+                            
+                            if 'GPU' in sensor_text or 'Package' in sensor_text:
+                                gpu_data['gpu_power'] = float(value_str.replace('W', '').strip())
+                    
+                    # Memory Data (MB)
+                    elif 'Data' in child_text or 'SmallData' in child_text:
+                        for sensor in child.get('Children', []):
+                            sensor_text = sensor.get('Text', '')
+                            value_str = sensor.get('Value', '0.0 MB')
+                            
+                            if 'Memory Used' in sensor_text:
+                                gpu_data['gpu_memory_used'] = float(value_str.replace('MB', '').replace('GB', '').strip())
+                                if 'GB' in value_str:
+                                    gpu_data['gpu_memory_used'] *= 1024
+                            elif 'Memory Total' in sensor_text:
+                                gpu_data['gpu_memory_total'] = float(value_str.replace('MB', '').replace('GB', '').strip())
+                                if 'GB' in value_str:
+                                    gpu_data['gpu_memory_total'] *= 1024
+                
+                # Only return if we got at least temperature or load data
+                if 'gpu_temp' in gpu_data or 'gpu_percent' in gpu_data:
+                    # Set defaults for missing values
+                    gpu_data.setdefault('gpu_percent', 0.0)
+                    gpu_data.setdefault('gpu_memory_percent', 0.0)
+                    gpu_data.setdefault('gpu_temp', 0.0)
+                    return gpu_data
             
-            return find_gpu_data(data)
+            # Recursively search children
+            for child in node.get('Children', []):
+                result = find_gpu_data(child)
+                if result:
+                    return result
+            return None
+        
+        return find_gpu_data(data)
     except Exception as e:
         # Silently fail - GPU monitoring is optional
         pass
@@ -220,44 +296,41 @@ def get_cpu_temp_from_libre_hardware_monitor():
         float: CPU temperature in Celsius, or 0 if not available
     """
     try:
-        import urllib.request
-        import json
+        # Use cached LHM data
+        data = _get_lhm_data()
+        if data is None:
+            return 0
         
-        # Try to fetch from LibreHardwareMonitor web server
-        url = "http://localhost:8085/data.json"
-        with urllib.request.urlopen(url, timeout=1) as response:
-            data = json.loads(response.read().decode())
+        # Recursively search for CPU temperature
+        def find_cpu_temp(node):
+            text = node.get('Text', '')
             
-            # Recursively search for CPU temperature
-            def find_cpu_temp(node):
-                text = node.get('Text', '')
-                
-                # Check if this is a CPU node (Intel or AMD)
-                if ('Intel Core' in text or 'AMD Ryzen' in text or 'AMD EPYC' in text) and 'intelcpu' in node.get('HardwareId', '').lower() or 'amdcpu' in node.get('HardwareId', '').lower():
-                    # Found the CPU, now look for temperatures
-                    for child in node.get('Children', []):
-                        if 'Temperature' in child.get('Text', ''):
-                            # Found temperatures section
-                            for temp_sensor in child.get('Children', []):
-                                sensor_text = temp_sensor.get('Text', '')
-                                # Look for CPU Package or Core Average (prefer Package)
-                                if 'CPU Package' in sensor_text or 'Package' in sensor_text:
-                                    value_str = temp_sensor.get('Value', '0.0 °C')
-                                    temp = float(value_str.replace('°C', '').replace('°', '').strip())
-                                    return temp
-                                elif 'Core Average' in sensor_text or 'Average' in sensor_text:
-                                    value_str = temp_sensor.get('Value', '0.0 °C')
-                                    temp = float(value_str.replace('°C', '').replace('°', '').strip())
-                                    return temp
-                
-                # Recursively search children
+            # Check if this is a CPU node (Intel or AMD)
+            if ('Intel Core' in text or 'AMD Ryzen' in text or 'AMD EPYC' in text) and 'intelcpu' in node.get('HardwareId', '').lower() or 'amdcpu' in node.get('HardwareId', '').lower():
+                # Found the CPU, now look for temperatures
                 for child in node.get('Children', []):
-                    result = find_cpu_temp(child)
-                    if result > 0:
-                        return result
-                return 0
+                    if 'Temperature' in child.get('Text', ''):
+                        # Found temperatures section
+                        for temp_sensor in child.get('Children', []):
+                            sensor_text = temp_sensor.get('Text', '')
+                            # Look for CPU Package or Core Average (prefer Package)
+                            if 'CPU Package' in sensor_text or 'Package' in sensor_text:
+                                value_str = temp_sensor.get('Value', '0.0 °C')
+                                temp = float(value_str.replace('°C', '').replace('°', '').strip())
+                                return temp
+                            elif 'Core Average' in sensor_text or 'Average' in sensor_text:
+                                value_str = temp_sensor.get('Value', '0.0 °C')
+                                temp = float(value_str.replace('°C', '').replace('°', '').strip())
+                                return temp
             
-            return find_cpu_temp(data)
+            # Recursively search children
+            for child in node.get('Children', []):
+                result = find_cpu_temp(child)
+                if result > 0:
+                    return result
+            return 0
+        
+        return find_cpu_temp(data)
     except Exception as e:
         # Silently fail
         pass
@@ -277,59 +350,57 @@ def get_ram_temperatures():
             - ram_temp_avg: Average temperature of populated DIMMs (0 if none)
     """
     try:
-        import urllib.request
-        import json
+        # Use cached LHM data
+        data = _get_lhm_data()
+        if data is None:
+            return {'dimm_1_temp': 0, 'dimm_2_temp': 0, 'dimm_3_temp': 0, 'dimm_4_temp': 0, 'ram_temp_avg': 0}
         
-        url = "http://localhost:8085/data.json"
-        with urllib.request.urlopen(url, timeout=1) as response:
-            data = json.loads(response.read().decode())
+        # Recursively search for RAM/DIMM temperature sensors
+        def find_dimm_temps(node):
+            temps = {}
             
-            # Recursively search for RAM/DIMM temperature sensors
-            def find_dimm_temps(node):
-                temps = {}
+            if isinstance(node, dict):
+                # Check if this is a DIMM temperature node
+                if node.get('Type') == 'Temperature' and 'DIMM' in node.get('Text', ''):
+                    dimm_text = node.get('Text', '')
+                    value_str = node.get('Value', '0.0 °C')
+                    try:
+                        temp = float(value_str.split()[0])
+                        # Extract DIMM number from text like "DIMM #1", "DIMM #3"
+                        if '#' in dimm_text:
+                            dimm_num = dimm_text.split('#')[1].split()[0]
+                            temps[f'dimm_{dimm_num}_temp'] = temp
+                    except (ValueError, IndexError):
+                        pass
                 
-                if isinstance(node, dict):
-                    # Check if this is a DIMM temperature node
-                    if node.get('Type') == 'Temperature' and 'DIMM' in node.get('Text', ''):
-                        dimm_text = node.get('Text', '')
-                        value_str = node.get('Value', '0.0 °C')
-                        try:
-                            temp = float(value_str.split()[0])
-                            # Extract DIMM number from text like "DIMM #1", "DIMM #3"
-                            if '#' in dimm_text:
-                                dimm_num = dimm_text.split('#')[1].split()[0]
-                                temps[f'dimm_{dimm_num}_temp'] = temp
-                        except (ValueError, IndexError):
-                            pass
-                    
-                    # Recursively search children
-                    if 'Children' in node:
-                        for child in node['Children']:
-                            temps.update(find_dimm_temps(child))
-                elif isinstance(node, list):
-                    for item in node:
-                        temps.update(find_dimm_temps(item))
-                
-                return temps
+                # Recursively search children
+                if 'Children' in node:
+                    for child in node['Children']:
+                        temps.update(find_dimm_temps(child))
+            elif isinstance(node, list):
+                for item in node:
+                    temps.update(find_dimm_temps(item))
             
-            dimm_temps = find_dimm_temps(data)
-            
-            # Ensure all 4 DIMM slots are represented (0 if not found)
-            result = {
-                'dimm_1_temp': dimm_temps.get('dimm_1_temp', 0),
-                'dimm_2_temp': dimm_temps.get('dimm_2_temp', 0),
-                'dimm_3_temp': dimm_temps.get('dimm_3_temp', 0),
-                'dimm_4_temp': dimm_temps.get('dimm_4_temp', 0)
-            }
-            
-            # Calculate average of populated DIMMs
-            populated_temps = [temp for temp in result.values() if temp > 0]
-            if populated_temps:
-                result['ram_temp_avg'] = round(sum(populated_temps) / len(populated_temps), 1)
-            else:
-                result['ram_temp_avg'] = 0
-            
-            return result
+            return temps
+        
+        dimm_temps = find_dimm_temps(data)
+        
+        # Ensure all 4 DIMM slots are represented (0 if not found)
+        result = {
+            'dimm_1_temp': dimm_temps.get('dimm_1_temp', 0),
+            'dimm_2_temp': dimm_temps.get('dimm_2_temp', 0),
+            'dimm_3_temp': dimm_temps.get('dimm_3_temp', 0),
+            'dimm_4_temp': dimm_temps.get('dimm_4_temp', 0)
+        }
+        
+        # Calculate average of populated DIMMs
+        populated_temps = [temp for temp in result.values() if temp > 0]
+        if populated_temps:
+            result['ram_temp_avg'] = round(sum(populated_temps) / len(populated_temps), 1)
+        else:
+            result['ram_temp_avg'] = 0
+        
+        return result
     except Exception:
         pass
     
@@ -344,45 +415,43 @@ def get_nvme_temperature():
         float: NVMe temperature in Celsius (0 if unavailable)
     """
     try:
-        import urllib.request
-        import json
+        # Use cached LHM data
+        data = _get_lhm_data()
+        if data is None:
+            return 0
         
-        url = "http://localhost:8085/data.json"
-        with urllib.request.urlopen(url, timeout=1) as response:
-            data = json.loads(response.read().decode())
-            
-            # Recursively search for NVMe temperature
-            def find_nvme_temp(node):
-                if isinstance(node, dict):
-                    # Check if this is an NVMe device
-                    if node.get('HardwareId', '').startswith('/nvme/'):
-                        # Look for temperature in children
-                        for child in node.get('Children', []):
-                            if child.get('Text') == 'Temperatures':
-                                # Get first temperature sensor (usually the main one)
-                                for temp_sensor in child.get('Children', []):
-                                    if temp_sensor.get('Type') == 'Temperature':
-                                        value_str = temp_sensor.get('Value', '0.0 °C')
-                                        try:
-                                            return float(value_str.split()[0])
-                                        except (ValueError, IndexError):
-                                            pass
-                    
-                    # Recursively search children
-                    if 'Children' in node:
-                        for child in node['Children']:
-                            temp = find_nvme_temp(child)
-                            if temp > 0:
-                                return temp
-                elif isinstance(node, list):
-                    for item in node:
-                        temp = find_nvme_temp(item)
+        # Recursively search for NVMe temperature
+        def find_nvme_temp(node):
+            if isinstance(node, dict):
+                # Check if this is an NVMe device
+                if node.get('HardwareId', '').startswith('/nvme/'):
+                    # Look for temperature in children
+                    for child in node.get('Children', []):
+                        if child.get('Text') == 'Temperatures':
+                            # Get first temperature sensor (usually the main one)
+                            for temp_sensor in child.get('Children', []):
+                                if temp_sensor.get('Type') == 'Temperature':
+                                    value_str = temp_sensor.get('Value', '0.0 °C')
+                                    try:
+                                        return float(value_str.split()[0])
+                                    except (ValueError, IndexError):
+                                        pass
+                
+                # Recursively search children
+                if 'Children' in node:
+                    for child in node['Children']:
+                        temp = find_nvme_temp(child)
                         if temp > 0:
                             return temp
-                
-                return 0
+            elif isinstance(node, list):
+                for item in node:
+                    temp = find_nvme_temp(item)
+                    if temp > 0:
+                        return temp
             
-            return find_nvme_temp(data)
+            return 0
+        
+        return find_nvme_temp(data)
     except Exception:
         pass
     return 0
@@ -441,14 +510,10 @@ def get_network_speed():
             - upload_mbs: Upload speed in MB/s
             - download_mbs: Download speed in MB/s
     """
-    # Try LibreHardwareMonitor first
+    # Try LibreHardwareMonitor first (using cached data)
     try:
-        import urllib.request
-        import json
-        
-        url = "http://localhost:8085/data.json"
-        with urllib.request.urlopen(url, timeout=1) as response:
-            data = json.loads(response.read().decode())
+        data = _get_lhm_data()
+        if data is not None:
             
             # Find active network adapter with throughput data
             def find_network_speed(node):
@@ -510,7 +575,7 @@ def get_network_speed():
             }
     except Exception:
         pass
-    
+
     # Fallback to psutil method
     global _last_net_io, _last_net_time
 
@@ -640,14 +705,10 @@ def get_disk_io_speed():
             - disk_read_kbs: Read speed in KB/s
             - disk_write_kbs: Write speed in KB/s
     """
-    # Try LibreHardwareMonitor first
+    # Try LibreHardwareMonitor first (using cached data)
     try:
-        import urllib.request
-        import json
-        
-        url = "http://localhost:8085/data.json"
-        with urllib.request.urlopen(url, timeout=1) as response:
-            data = json.loads(response.read().decode())
+        data = _get_lhm_data()
+        if data is not None:
             
             # Find NVMe/disk throughput data
             def find_disk_speed(node):
@@ -710,7 +771,7 @@ def get_disk_io_speed():
             }
     except Exception:
         pass
-    
+
     # Fallback to psutil method
     global _last_disk_io, _last_disk_io_time
 
