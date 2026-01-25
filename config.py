@@ -13,8 +13,8 @@ DISPLAY_HEIGHT = 480
 COM_PORT = "COM3"
 
 # Baud rate for serial communication
-# Common values: 115200, 9600, 57600
-# Start with 115200 (most common for these displays)
+# Testing shows baud rate doesn't affect speed (hardware limited at ~1.36s)
+# Keeping at standard 115200 for compatibility
 BAUD_RATE = 115200
 
 # === Update Settings ===
