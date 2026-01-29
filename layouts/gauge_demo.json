@@ -1,0 +1,297 @@
+{
+  "name": "Gauge Widget Demo",
+  "description": "Demonstration layout showcasing gauge widgets with different styles",
+  "display": {
+    "width": 320,
+    "height": 480,
+    "background_color": "#0A0A0A"
+  },
+  "widgets": [
+    {
+      "type": "text",
+      "id": "title",
+      "position": {
+        "x": 160,
+        "y": 10
+      },
+      "size": {
+        "width": 300,
+        "height": 30
+      },
+      "data_source": "time",
+      "font_size": 14,
+      "font_family": "arial",
+      "bold": true,
+      "color": "#FFFFFF",
+      "align": "center"
+    },
+    {
+      "type": "gauge",
+      "id": "cpu_gauge_arc",
+      "position": {
+        "x": 10,
+        "y": 50
+      },
+      "size": {
+        "width": 140,
+        "height": 140
+      },
+      "data_source": "cpu_percent",
+      "style": "arc",
+      "arc_start": 135,
+      "arc_end": 405,
+      "min_value": 0,
+      "max_value": 100,
+      "show_value": true,
+      "value_format": "{:.0f}%",
+      "show_ticks": true,
+      "tick_interval": 25,
+      "track_color": "#1A1A1A",
+      "track_width": 8,
+      "arc_width": 12,
+      "text_color": "#FFFFFF",
+      "color_zones": [
+        {
+          "range": [
+            0,
+            60
+          ],
+          "color": "#00FF88"
+        },
+        {
+          "range": [
+            60,
+            85
+          ],
+          "color": "#FFAA00"
+        },
+        {
+          "range": [
+            85,
+            100
+          ],
+          "color": "#FF2A6D"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "cpu_label",
+      "position": {
+        "x": 10,
+        "y": 195
+      },
+      "size": {
+        "width": 140,
+        "height": 20
+      },
+      "data_source": "cpu_name",
+      "font_size": 10,
+      "color": "#888888",
+      "align": "center"
+    },
+    {
+      "type": "gauge",
+      "id": "gpu_gauge_needle",
+      "position": {
+        "x": 170,
+        "y": 50
+      },
+      "size": {
+        "width": 140,
+        "height": 140
+      },
+      "data_source": "gpu_percent",
+      "style": "needle",
+      "arc_start": 135,
+      "arc_end": 405,
+      "min_value": 0,
+      "max_value": 100,
+      "show_value": true,
+      "value_format": "{:.0f}%",
+      "show_ticks": true,
+      "tick_interval": 25,
+      "track_color": "#1A1A1A",
+      "track_width": 6,
+      "needle_width": 4,
+      "text_color": "#FFFFFF",
+      "color_zones": [
+        {
+          "range": [
+            0,
+            60
+          ],
+          "color": "#05FFA1"
+        },
+        {
+          "range": [
+            60,
+            85
+          ],
+          "color": "#FFD700"
+        },
+        {
+          "range": [
+            85,
+            100
+          ],
+          "color": "#FF00AA"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "gpu_label",
+      "position": {
+        "x": 170,
+        "y": 195
+      },
+      "size": {
+        "width": 140,
+        "height": 20
+      },
+      "data_source": "gpu_name",
+      "font_size": 10,
+      "color": "#888888",
+      "align": "center"
+    },
+    {
+      "type": "gauge",
+      "id": "cpu_temp_donut",
+      "position": {
+        "x": 10,
+        "y": 235
+      },
+      "size": {
+        "width": 140,
+        "height": 140
+      },
+      "data_source": "cpu_temp",
+      "update_interval": 1.0,
+      "style": "donut",
+      "arc_start": 135,
+      "arc_end": 405,
+      "min_value": 20,
+      "max_value": 100,
+      "show_value": false,
+      "show_ticks": true,
+      "tick_interval": 20,
+      "display_component_name": true,
+      "track_color": "#1A1A1A",
+      "track_width": 10,
+      "arc_width": 12,
+      "needle_color": "#00D4FF",
+      "needle_width": 3,
+      "text_color": "#FFFFFF",
+      "value_format": "{:.0f}\u00c2\u00b0C",
+      "color_zones": [
+        {
+          "range": [
+            20,
+            60
+          ],
+          "color": "#00FFFF"
+        },
+        {
+          "range": [
+            60,
+            80
+          ],
+          "color": "#FFAA00"
+        },
+        {
+          "range": [
+            80,
+            100
+          ],
+          "color": "#FF3333"
+        }
+      ]
+    },
+    {
+      "type": "gauge",
+      "id": "ram_gauge_semicircle",
+      "position": {
+        "x": 170,
+        "y": 235
+      },
+      "size": {
+        "width": 140,
+        "height": 140
+      },
+      "data_source": "ram_percent",
+      "update_interval": 1.0,
+      "style": "needle",
+      "arc_start": 180,
+      "arc_end": 360,
+      "min_value": 0,
+      "max_value": 100,
+      "show_value": false,
+      "show_ticks": true,
+      "tick_interval": 25,
+      "display_component_name": true,
+      "track_color": "#1A1A1A",
+      "track_width": 8,
+      "arc_width": 12,
+      "needle_color": "#FF2A6D",
+      "needle_width": 3,
+      "text_color": "#FFFFFF",
+      "value_format": "{:.0f}%",
+      "color_zones": [
+        {
+          "range": [
+            0,
+            70
+          ],
+          "color": "#00CCFF"
+        },
+        {
+          "range": [
+            70,
+            90
+          ],
+          "color": "#FF8800"
+        },
+        {
+          "range": [
+            90,
+            100
+          ],
+          "color": "#FF0044"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "date_footer",
+      "position": {
+        "x": 160,
+        "y": 420
+      },
+      "size": {
+        "width": 300,
+        "height": 30
+      },
+      "data_source": "date",
+      "font_size": 12,
+      "color": "#555555",
+      "align": "center"
+    },
+    {
+      "type": "text",
+      "id": "hostname",
+      "position": {
+        "x": 160,
+        "y": 450
+      },
+      "size": {
+        "width": 300,
+        "height": 30
+      },
+      "data_source": "hostname",
+      "font_size": 10,
+      "color": "#444444",
+      "align": "center"
+    }
+  ]
+}

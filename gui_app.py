@@ -1251,7 +1251,7 @@ class TuringControlCenter:
         # Validate widgets
         widget_ids = set()
         valid_data_sources = ['time', 'date', 'cpu_percent', 'cpu_name', 'ram_percent',
-                             'ram_used', 'ram_total', 'disk_c_percent', 'disk_c_used', 'disk_c_total',
+                             'ram_used', 'ram_total', 'ram_name', 'disk_c_percent', 'disk_c_used', 'disk_c_total', 'disk_name',
                              'gpu_percent', 'gpu_name', 'gpu_temp', 'gpu_memory_percent', 'gpu_hotspot_temp',
                              'gpu_clock', 'gpu_memory_clock', 'gpu_power', 'gpu_memory_used', 'gpu_memory_total',
                              'cpu_temp', 'net_upload_kbs', 'net_download_kbs', 'net_upload_mbs', 'net_download_mbs',
@@ -1310,7 +1310,7 @@ class TuringControlCenter:
                     errors.append(f"Widget {widget_num}: Unknown data source '{widget['data_source']}'")
 
             # Validate widget type
-            if widget['type'] not in ['text', 'progress_bar', 'sparkline', 'image']:
+            if widget['type'] not in ['text', 'progress_bar', 'sparkline', 'gauge', 'image']:
                 errors.append(f"Widget {widget_num}: Unknown widget type '{widget['type']}'")
 
             # Validate color codes (if present)
@@ -1732,7 +1732,7 @@ class WidgetDialog:
         row = 1
         ttk.Label(scrollable_frame, text="Widget Type:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
         self.type_var = tk.StringVar(value=self.existing_widget.get('type', 'text') if self.existing_widget else 'text')
-        type_combo = ttk.Combobox(scrollable_frame, textvariable=self.type_var, values=['text', 'progress_bar', 'sparkline', 'image'], state='readonly', width=25)
+        type_combo = ttk.Combobox(scrollable_frame, textvariable=self.type_var, values=['text', 'progress_bar', 'sparkline', 'gauge', 'image'], state='readonly', width=25)
         type_combo.grid(row=row, column=1, sticky='w', pady=5)
         type_combo.bind('<<ComboboxSelected>>', self.on_type_change)
 
@@ -1876,7 +1876,7 @@ class WidgetDialog:
 
             # Import required modules
             from PIL import Image, ImageTk, ImageDraw
-            from widgets import TextWidget, ProgressBarWidget, SparklineWidget, ImageWidget
+            from widgets import TextWidget, ProgressBarWidget, SparklineWidget, GaugeWidget, ImageWidget
 
             # For ImageWidget, only rebuild if type or image properties changed (not position/size)
             # For other widgets, rebuild on any change
@@ -1916,6 +1916,8 @@ class WidgetDialog:
                     self._cached_widget = SparklineWidget(widget_config)
                     # Provide sample historical data for sparkline preview
                     self.setup_sample_history(widget_config['data_source'])
+                elif widget_config['type'] == 'gauge':
+                    self._cached_widget = GaugeWidget(widget_config)
                 elif widget_config['type'] == 'image':
                     self._cached_widget = ImageWidget(widget_config)
                 else:
@@ -2125,6 +2127,52 @@ class WidgetDialog:
                     config['text_color'] = '#FFFFFF'
                     config['grid_color'] = '#333333'
             
+            elif config['type'] == 'gauge':
+                if hasattr(self, 'gauge_style_var'):
+                    config['style'] = self.gauge_style_var.get()
+                    config['arc_start'] = self.arc_start_var.get()
+                    config['arc_end'] = self.arc_end_var.get()
+                    config['min_value'] = self.gauge_min_value_var.get()
+                    config['max_value'] = self.gauge_max_value_var.get()
+                    config['show_value'] = self.gauge_show_value_var.get()
+                    config['show_ticks'] = self.gauge_show_ticks_var.get()
+                    config['tick_interval'] = self.gauge_tick_interval_var.get()
+                    config['display_component_name'] = self.gauge_display_component_name_var.get()
+                    config['track_color'] = self.gauge_track_color_var.get()
+                    config['track_width'] = self.gauge_track_width_var.get()
+                    config['arc_width'] = self.gauge_arc_width_var.get()
+                    config['needle_color'] = self.gauge_needle_color_var.get()
+                    config['needle_width'] = self.gauge_needle_width_var.get()
+                    config['text_color'] = self.gauge_text_color_var.get()
+                    config['value_format'] = self.gauge_value_format_var.get()
+                    
+                    # Parse color zones from JSON text
+                    try:
+                        import json
+                        zones_text = self.gauge_color_zones_var.get('1.0', 'end-1c')
+                        config['color_zones'] = json.loads(zones_text)
+                    except:
+                        config['color_zones'] = [{'range': [0, 100], 'color': '#00FF00'}]
+                else:
+                    # Default values for gauge
+                    config['style'] = 'arc'
+                    config['arc_start'] = 135
+                    config['arc_end'] = 405
+                    config['min_value'] = 0
+                    config['max_value'] = 100
+                    config['show_value'] = True
+                    config['show_ticks'] = True
+                    config['tick_interval'] = 25
+                    config['display_component_name'] = False
+                    config['track_color'] = '#333333'
+                    config['track_width'] = 8
+                    config['arc_width'] = 10
+                    config['needle_color'] = '#FF2A6D'
+                    config['needle_width'] = 3
+                    config['text_color'] = '#FFFFFF'
+                    config['value_format'] = '{:.1f}%'
+                    config['color_zones'] = [{'range': [0, 100], 'color': '#00FF00'}]
+            
             elif config['type'] == 'image':
                 config['image_path'] = self.image_path_var.get()
                 config['scale_mode'] = self.scale_mode_var.get()
@@ -2160,6 +2208,8 @@ class WidgetDialog:
             self.create_progress_bar_fields()
         elif widget_type == 'sparkline':
             self.create_sparkline_widget_fields()
+        elif widget_type == 'gauge':
+            self.create_gauge_widget_fields()
         elif widget_type == 'image':
             self.create_image_widget_fields()
 
@@ -2454,6 +2504,172 @@ class WidgetDialog:
         self.sparkline_display_component_name_var.trace_add('write', lambda *args: self.update_preview())
         ttk.Checkbutton(self.specific_frame, text="Display Component Name", variable=self.sparkline_display_component_name_var).grid(row=row, column=0, columnspan=2, sticky='w', pady=5)
 
+    def create_gauge_widget_fields(self):
+        """Create fields specific to GaugeWidget"""
+        ttk.Label(self.specific_frame, text="Gauge Widget Properties", font=('Arial', 10, 'bold')).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0,10))
+        
+        # Style
+        row = 1
+        ttk.Label(self.specific_frame, text="Style:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
+        self.gauge_style_var = tk.StringVar(value=self.existing_widget.get('style', 'arc') if self.existing_widget else 'arc')
+        self.gauge_style_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Combobox(self.specific_frame, textvariable=self.gauge_style_var, values=['arc', 'needle', 'donut'], state='readonly', width=25).grid(row=row, column=1, sticky='w', pady=5)
+        
+        # Arc Angles
+        row += 1
+        ttk.Label(self.specific_frame, text="Arc Angles:", font=('Arial', 9, 'bold')).grid(row=row, column=0, columnspan=2, sticky='w', pady=(10,5))
+        
+        row += 1
+        angle_frame = ttk.Frame(self.specific_frame)
+        angle_frame.grid(row=row, column=0, columnspan=2, sticky='w', pady=5)
+        
+        ttk.Label(angle_frame, text="Start:").pack(side='left', padx=(0,5))
+        self.arc_start_var = tk.IntVar(value=self.existing_widget.get('arc_start', 135) if self.existing_widget else 135)
+        self.arc_start_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Spinbox(angle_frame, from_=0, to=360, textvariable=self.arc_start_var, width=10).pack(side='left', padx=5)
+        
+        ttk.Label(angle_frame, text="End:").pack(side='left', padx=(20,5))
+        self.arc_end_var = tk.IntVar(value=self.existing_widget.get('arc_end', 405) if self.existing_widget else 405)
+        self.arc_end_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Spinbox(angle_frame, from_=0, to=720, textvariable=self.arc_end_var, width=10).pack(side='left', padx=5)
+        
+        # Value Range
+        row += 1
+        ttk.Label(self.specific_frame, text="Value Range:", font=('Arial', 9, 'bold')).grid(row=row, column=0, columnspan=2, sticky='w', pady=(10,5))
+        
+        row += 1
+        range_frame = ttk.Frame(self.specific_frame)
+        range_frame.grid(row=row, column=0, columnspan=2, sticky='w', pady=5)
+        
+        ttk.Label(range_frame, text="Min:").pack(side='left', padx=(0,5))
+        self.gauge_min_value_var = tk.IntVar(value=self.existing_widget.get('min_value', 0) if self.existing_widget else 0)
+        self.gauge_min_value_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Spinbox(range_frame, from_=-1000, to=1000, textvariable=self.gauge_min_value_var, width=10).pack(side='left', padx=5)
+        
+        ttk.Label(range_frame, text="Max:").pack(side='left', padx=(20,5))
+        self.gauge_max_value_var = tk.IntVar(value=self.existing_widget.get('max_value', 100) if self.existing_widget else 100)
+        self.gauge_max_value_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Spinbox(range_frame, from_=-1000, to=10000, textvariable=self.gauge_max_value_var, width=10).pack(side='left', padx=5)
+        
+        # Display Options
+        row += 1
+        ttk.Label(self.specific_frame, text="Display:", font=('Arial', 9, 'bold')).grid(row=row, column=0, columnspan=2, sticky='w', pady=(10,5))
+        
+        row += 1
+        self.gauge_show_value_var = tk.BooleanVar(value=self.existing_widget.get('show_value', True) if self.existing_widget else True)
+        self.gauge_show_value_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Checkbutton(self.specific_frame, text="Show Value", variable=self.gauge_show_value_var).grid(row=row, column=0, columnspan=2, sticky='w', pady=5)
+        
+        row += 1
+        self.gauge_show_ticks_var = tk.BooleanVar(value=self.existing_widget.get('show_ticks', True) if self.existing_widget else True)
+        self.gauge_show_ticks_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Checkbutton(self.specific_frame, text="Show Tick Marks", variable=self.gauge_show_ticks_var).grid(row=row, column=0, columnspan=2, sticky='w', pady=5)
+        
+        row += 1
+        self.gauge_display_component_name_var = tk.BooleanVar(value=self.existing_widget.get('display_component_name', False) if self.existing_widget else False)
+        self.gauge_display_component_name_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Checkbutton(self.specific_frame, text="Display Component Name", variable=self.gauge_display_component_name_var).grid(row=row, column=0, columnspan=2, sticky='w', pady=5)
+        
+        row += 1
+        ttk.Label(self.specific_frame, text="Tick Interval:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
+        self.gauge_tick_interval_var = tk.IntVar(value=self.existing_widget.get('tick_interval', 25) if self.existing_widget else 25)
+        self.gauge_tick_interval_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Spinbox(self.specific_frame, from_=5, to=100, textvariable=self.gauge_tick_interval_var, width=10).grid(row=row, column=1, sticky='w', pady=5)
+        
+        row += 1
+        ttk.Label(self.specific_frame, text="Value Format:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
+        self.gauge_value_format_var = tk.StringVar(value=self.existing_widget.get('value_format', '{:.1f}%') if self.existing_widget else '{:.1f}%')
+        self.gauge_value_format_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Entry(self.specific_frame, textvariable=self.gauge_value_format_var, width=27).grid(row=row, column=1, sticky='w', pady=5)
+        
+        # Colors
+        row += 1
+        ttk.Label(self.specific_frame, text="Colors:", font=('Arial', 9, 'bold')).grid(row=row, column=0, columnspan=2, sticky='w', pady=(10,5))
+        
+        # Track Color
+        row += 1
+        ttk.Label(self.specific_frame, text="Track Color:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
+        color_frame1 = ttk.Frame(self.specific_frame)
+        color_frame1.grid(row=row, column=1, sticky='w', pady=5)
+        self.gauge_track_color_var = tk.StringVar(value=self.existing_widget.get('track_color', '#333333') if self.existing_widget else '#333333')
+        self.gauge_track_color_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Entry(color_frame1, textvariable=self.gauge_track_color_var, width=10).pack(side='left', padx=5)
+        ttk.Button(color_frame1, text="Pick", command=lambda: self.pick_color(self.gauge_track_color_var)).pack(side='left')
+        
+        # Needle Color
+        row += 1
+        ttk.Label(self.specific_frame, text="Needle Color:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
+        color_frame2 = ttk.Frame(self.specific_frame)
+        color_frame2.grid(row=row, column=1, sticky='w', pady=5)
+        self.gauge_needle_color_var = tk.StringVar(value=self.existing_widget.get('needle_color', '#FF2A6D') if self.existing_widget else '#FF2A6D')
+        self.gauge_needle_color_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Entry(color_frame2, textvariable=self.gauge_needle_color_var, width=10).pack(side='left', padx=5)
+        ttk.Button(color_frame2, text="Pick", command=lambda: self.pick_color(self.gauge_needle_color_var)).pack(side='left')
+        
+        # Text Color
+        row += 1
+        ttk.Label(self.specific_frame, text="Text Color:").grid(row=row, column=0, sticky='w', pady=5, padx=(0,10))
+        color_frame3 = ttk.Frame(self.specific_frame)
+        color_frame3.grid(row=row, column=1, sticky='w', pady=5)
+        self.gauge_text_color_var = tk.StringVar(value=self.existing_widget.get('text_color', '#FFFFFF') if self.existing_widget else '#FFFFFF')
+        self.gauge_text_color_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Entry(color_frame3, textvariable=self.gauge_text_color_var, width=10).pack(side='left', padx=5)
+        ttk.Button(color_frame3, text="Pick", command=lambda: self.pick_color(self.gauge_text_color_var)).pack(side='left')
+        
+        # Widths
+        row += 1
+        ttk.Label(self.specific_frame, text="Widths:", font=('Arial', 9, 'bold')).grid(row=row, column=0, columnspan=2, sticky='w', pady=(10,5))
+        
+        row += 1
+        width_frame = ttk.Frame(self.specific_frame)
+        width_frame.grid(row=row, column=0, columnspan=2, sticky='w', pady=5)
+        
+        ttk.Label(width_frame, text="Track:").pack(side='left', padx=(0,5))
+        self.gauge_track_width_var = tk.IntVar(value=self.existing_widget.get('track_width', 8) if self.existing_widget else 8)
+        self.gauge_track_width_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Spinbox(width_frame, from_=1, to=20, textvariable=self.gauge_track_width_var, width=8).pack(side='left', padx=5)
+        
+        ttk.Label(width_frame, text="Arc:").pack(side='left', padx=(10,5))
+        self.gauge_arc_width_var = tk.IntVar(value=self.existing_widget.get('arc_width', 10) if self.existing_widget else 10)
+        self.gauge_arc_width_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Spinbox(width_frame, from_=1, to=20, textvariable=self.gauge_arc_width_var, width=8).pack(side='left', padx=5)
+        
+        ttk.Label(width_frame, text="Needle:").pack(side='left', padx=(10,5))
+        self.gauge_needle_width_var = tk.IntVar(value=self.existing_widget.get('needle_width', 3) if self.existing_widget else 3)
+        self.gauge_needle_width_var.trace_add('write', lambda *args: self.update_preview())
+        ttk.Spinbox(width_frame, from_=1, to=10, textvariable=self.gauge_needle_width_var, width=8).pack(side='left', padx=5)
+        
+        # Color Zones
+        row += 1
+        ttk.Label(self.specific_frame, text="Color Zones (JSON):", font=('Arial', 9, 'bold')).grid(row=row, column=0, columnspan=2, sticky='w', pady=(10,5))
+        
+        row += 1
+        zones_frame = ttk.Frame(self.specific_frame)
+        zones_frame.grid(row=row, column=0, columnspan=2, sticky='w', pady=5)
+        
+        # Get existing zones or use default
+        import json
+        default_zones = self.existing_widget.get('color_zones', [
+            {'range': [0, 60], 'color': '#00FF00'},
+            {'range': [60, 85], 'color': '#FFAA00'},
+            {'range': [85, 100], 'color': '#FF0000'}
+        ]) if self.existing_widget else [
+            {'range': [0, 60], 'color': '#00FF00'},
+            {'range': [60, 85], 'color': '#FFAA00'},
+            {'range': [85, 100], 'color': '#FF0000'}
+        ]
+        zones_json = json.dumps(default_zones, indent=2)
+        
+        self.gauge_color_zones_var = tk.Text(zones_frame, width=35, height=6)
+        self.gauge_color_zones_var.insert('1.0', zones_json)
+        self.gauge_color_zones_var.pack(side='left')
+        self.gauge_color_zones_var.bind('<KeyRelease>', lambda e: self.update_preview())
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(zones_frame, command=self.gauge_color_zones_var.yview)
+        scrollbar.pack(side='left', fill='y')
+        self.gauge_color_zones_var.config(yscrollcommand=scrollbar.set)
+    
     def create_image_widget_fields(self):
         """Create fields specific to ImageWidget"""
         ttk.Label(self.specific_frame, text="Image Widget Properties", font=('Arial', 10, 'bold')).grid(row=0, column=0, columnspan=2, sticky='w', pady=(0,10))
@@ -2607,6 +2823,32 @@ class WidgetDialog:
             config['text_color'] = self.sparkline_text_color_var.get()
             config['grid_color'] = self.grid_color_var.get()
             config['display_component_name'] = self.sparkline_display_component_name_var.get()
+
+        elif config['type'] == 'gauge':
+            config['style'] = self.gauge_style_var.get()
+            config['arc_start'] = self.arc_start_var.get()
+            config['arc_end'] = self.arc_end_var.get()
+            config['min_value'] = self.gauge_min_value_var.get()
+            config['max_value'] = self.gauge_max_value_var.get()
+            config['show_value'] = self.gauge_show_value_var.get()
+            config['show_ticks'] = self.gauge_show_ticks_var.get()
+            config['tick_interval'] = self.gauge_tick_interval_var.get()
+            config['display_component_name'] = self.gauge_display_component_name_var.get()
+            config['track_color'] = self.gauge_track_color_var.get()
+            config['track_width'] = self.gauge_track_width_var.get()
+            config['arc_width'] = self.gauge_arc_width_var.get()
+            config['needle_color'] = self.gauge_needle_color_var.get()
+            config['needle_width'] = self.gauge_needle_width_var.get()
+            config['text_color'] = self.gauge_text_color_var.get()
+            config['value_format'] = self.gauge_value_format_var.get()
+            
+            # Parse color zones from JSON text
+            import json
+            zones_text = self.gauge_color_zones_var.get('1.0', 'end-1c')
+            try:
+                config['color_zones'] = json.loads(zones_text)
+            except:
+                config['color_zones'] = [{'range': [0, 100], 'color': '#00FF00'}]
 
         elif config['type'] == 'image':
             config['image_path'] = self.image_path_var.get()

@@ -230,6 +230,141 @@ def draw_rounded_rectangle_outline(draw, bbox, radius, color, width):
     draw.arc([x2 - radius * 2, y2 - radius * 2, x2, y2], 0, 90, fill=color, width=width)
 
 
+def value_to_angle(value, min_val, max_val, start_angle, end_angle):
+    """
+    Convert a value to an angle within the gauge's arc range
+
+    Args:
+        value: Current value to display
+        min_val: Minimum value of gauge range
+        max_val: Maximum value of gauge range
+        start_angle: Starting angle in degrees
+        end_angle: Ending angle in degrees
+
+    Returns:
+        float: Angle in degrees
+    """
+    # Clamp value to range
+    value = max(min_val, min(max_val, value))
+    
+    # Normalize value to 0-1 range
+    normalized = (value - min_val) / max(max_val - min_val, 0.0001)
+    
+    # Map to angle range
+    angle_range = end_angle - start_angle
+    return start_angle + (normalized * angle_range)
+
+
+def get_arc_bbox(center_x, center_y, radius):
+    """
+    Calculate bounding box for an arc given center point and radius
+
+    Args:
+        center_x: X coordinate of center
+        center_y: Y coordinate of center
+        radius: Arc radius
+
+    Returns:
+        list: Bounding box [x1, y1, x2, y2]
+    """
+    return [
+        center_x - radius,
+        center_y - radius,
+        center_x + radius,
+        center_y + radius
+    ]
+
+
+def get_needle_endpoint(center_x, center_y, angle, length):
+    """
+    Calculate endpoint of a needle/pointer at given angle
+
+    Args:
+        center_x: X coordinate of pivot point
+        center_y: Y coordinate of pivot point
+        angle: Angle in degrees (0 = 3 o'clock, 90 = 6 o'clock)
+        length: Needle length in pixels
+
+    Returns:
+        tuple: (x, y) endpoint coordinates
+    """
+    import math
+    rad = math.radians(angle)
+    x = center_x + length * math.cos(rad)
+    y = center_y + length * math.sin(rad)
+    return (int(x), int(y))
+
+
+def get_zone_color(value, color_zones):
+    """
+    Get the color for a value based on color zones
+
+    Args:
+        value: Current value
+        color_zones: List of zone dicts with 'range' and 'color'
+                    e.g., [{'range': [0, 60], 'color': '#00FF00'}, ...]
+
+    Returns:
+        str: Hex color string
+    """
+    for zone in color_zones:
+        zone_min, zone_max = zone['range']
+        if zone_min <= value <= zone_max:
+            return zone['color']
+    
+    # Default to first zone color if no match
+    return color_zones[0]['color'] if color_zones else '#00FF00'
+
+
+def draw_gauge_arc(draw, center_x, center_y, radius, start_angle, end_angle, color, width):
+    """
+    Draw an arc segment for gauge visualization
+
+    Args:
+        draw: PIL ImageDraw object
+        center_x: X coordinate of center
+        center_y: Y coordinate of center
+        radius: Arc radius
+        start_angle: Starting angle in degrees
+        end_angle: Ending angle in degrees
+        color: Arc color
+        width: Arc line width
+    """
+    bbox = get_arc_bbox(center_x, center_y, radius)
+    draw.arc(bbox, start_angle, end_angle, fill=color, width=width)
+
+
+def draw_gauge_needle(draw, center_x, center_y, angle, length, color, width):
+    """
+    Draw a needle/pointer for gauge visualization with subtle shadow effect
+
+    Args:
+        draw: PIL ImageDraw object
+        center_x: X coordinate of pivot point
+        center_y: Y coordinate of pivot point
+        angle: Angle in degrees
+        length: Needle length
+        color: Needle color
+        width: Needle line width
+    """
+    end_x, end_y = get_needle_endpoint(center_x, center_y, angle, length)
+    
+    # Draw subtle shadow (offset by 1-2 pixels)
+    shadow_color = '#00000080'  # Semi-transparent black
+    shadow_end_x, shadow_end_y = get_needle_endpoint(center_x + 1, center_y + 1, angle, length)
+    draw.line([(center_x + 1, center_y + 1), (shadow_end_x, shadow_end_y)], 
+              fill=shadow_color, width=width)
+    
+    # Draw main needle
+    draw.line([(center_x, center_y), (end_x, end_y)], fill=color, width=width)
+    
+    # Draw pivot circle
+    pivot_radius = max(3, width)
+    draw.ellipse([center_x - pivot_radius, center_y - pivot_radius, 
+                  center_x + pivot_radius, center_y + pivot_radius], 
+                 fill=color)
+
+
 class Widget:
     """Base widget class - all widgets inherit from this"""
 
@@ -671,6 +806,187 @@ class SparklineWidget(Widget):
                       outline=grid_color, width=1)
 
 
+class GaugeWidget(Widget):
+    """Circular/radial gauge widget for percentage/value display with multiple styles"""
+
+    def get_relevant_data(self, data):
+        """GaugeWidget depends on its data_source value."""
+        data_source = self.config.get('data_source', 'cpu_percent')
+        return data.get(data_source)
+
+    def render(self, draw, image, data):
+        import math
+        
+        # Extract position and size
+        x = self.position['x']
+        y = self.position['y']
+        width = self.size['width']
+        height = self.size['height']
+        
+        # Get configuration
+        style = self.config.get('style', 'arc')  # 'arc', 'needle', 'donut'
+        arc_start = self.config.get('arc_start', 135)  # degrees
+        arc_end = self.config.get('arc_end', 405)  # degrees (can exceed 360)
+        
+        # Color zones: list of {'range': [min, max], 'color': '#RRGGBB'}
+        color_zones = self.config.get('color_zones', [
+            {'range': [0, 100], 'color': '#00FF00'}
+        ])
+        
+        # Display options
+        show_value = self.config.get('show_value', True)
+        value_format = self.config.get('value_format', '{:.1f}%')
+        show_ticks = self.config.get('show_ticks', True)
+        tick_interval = self.config.get('tick_interval', 25)  # Show tick every 25%
+        
+        # Styling
+        track_color = self.config.get('track_color', '#333333')
+        track_width = self.config.get('track_width', 8)
+        arc_width = self.config.get('arc_width', 10)
+        needle_color = self.config.get('needle_color', '#FF2A6D')
+        needle_width = self.config.get('needle_width', 3)
+        text_color = self.config.get('text_color', '#FFFFFF')
+        
+        # Get data value
+        data_source = self.config.get('data_source', 'cpu_percent')
+        value = float(data.get(data_source, 0))
+        min_val = self.config.get('min_value', 0)
+        max_val = self.config.get('max_value', 100)
+        
+        # Clamp value to range
+        value = max(min_val, min(max_val, value))
+        
+        # Calculate center and radius
+        center_x = x + width // 2
+        center_y = y + height // 2
+        radius = min(width, height) // 2 - 15  # padding for labels
+        
+        # Calculate value angle
+        value_angle = value_to_angle(value, min_val, max_val, arc_start, arc_end)
+        
+        # Draw background track
+        if style in ['arc', 'donut']:
+            draw_gauge_arc(draw, center_x, center_y, radius, arc_start, arc_end, 
+                          track_color, track_width)
+        
+        # Draw color zone arcs (discrete segments)
+        if style in ['arc', 'donut']:
+            for zone in color_zones:
+                zone_min, zone_max = zone['range']
+                zone_color = zone['color']
+                
+                # Calculate angles for this zone
+                zone_start_angle = value_to_angle(zone_min, min_val, max_val, arc_start, arc_end)
+                zone_end_angle = value_to_angle(zone_max, min_val, max_val, arc_start, arc_end)
+                
+                # Only draw the portion that's filled (up to value_angle)
+                if value_angle >= zone_start_angle:
+                    actual_end = min(value_angle, zone_end_angle)
+                    draw_gauge_arc(draw, center_x, center_y, radius, 
+                                  zone_start_angle, actual_end, zone_color, arc_width)
+        
+        # Draw needle (for needle or donut+needle hybrid styles)
+        if style in ['needle', 'donut']:
+            # Needle extends from center
+            needle_length = radius - 5
+            current_color = get_zone_color(value, color_zones)
+            draw_gauge_needle(draw, center_x, center_y, value_angle, needle_length, 
+                            current_color if style == 'needle' else needle_color, needle_width)
+        
+        # Draw center circle for donut style
+        if style == 'donut':
+            inner_radius = radius - arc_width - 5
+            inner_bbox = get_arc_bbox(center_x, center_y, inner_radius)
+            draw.ellipse(inner_bbox, fill='#000000', outline=track_color, width=2)
+        
+        # Draw tick marks
+        if show_ticks and tick_interval > 0:
+            tick_font = None
+            try:
+                tick_font = ImageFont.truetype("C:\\Windows\\Fonts\\arial.ttf", 10)
+            except:
+                tick_font = ImageFont.load_default()
+            
+            # Calculate tick positions
+            value_range = max_val - min_val
+            num_ticks = int(value_range / tick_interval) + 1
+            
+            for i in range(num_ticks):
+                tick_value = min_val + (i * tick_interval)
+                if tick_value > max_val:
+                    break
+                    
+                tick_angle = value_to_angle(tick_value, min_val, max_val, arc_start, arc_end)
+                
+                # Draw tick mark (small line)
+                tick_start = radius - arc_width - 3
+                tick_end = radius - arc_width - 8
+                tick_start_pos = get_needle_endpoint(center_x, center_y, tick_angle, tick_start)
+                tick_end_pos = get_needle_endpoint(center_x, center_y, tick_angle, tick_end)
+                draw.line([tick_start_pos, tick_end_pos], fill='#888888', width=2)
+                
+                # Draw tick label
+                label_distance = radius - arc_width - 18
+                label_pos = get_needle_endpoint(center_x, center_y, tick_angle, label_distance)
+                tick_text = f"{int(tick_value)}"
+                
+                # Calculate text bounds for centering
+                bbox = draw.textbbox((0, 0), tick_text, font=tick_font)
+                text_width = bbox[2] - bbox[0]
+                text_height = bbox[3] - bbox[1]
+                
+                label_x = label_pos[0] - text_width // 2
+                label_y = label_pos[1] - text_height // 2
+                draw.text((label_x, label_y), tick_text, fill='#888888', font=tick_font)
+        
+        # Draw center value text
+        if show_value:
+            try:
+                value_font = ImageFont.truetype("C:\\Windows\\Fonts\\arialbd.ttf", 20)
+            except:
+                value_font = ImageFont.load_default()
+            
+            # Format value text
+            if isinstance(value_format, str):
+                value_text = value_format.format(value)
+            else:
+                value_text = f"{value:.1f}%"
+            
+            # Calculate text position (centered)
+            bbox = draw.textbbox((0, 0), value_text, font=value_font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            
+            text_x = center_x - text_width // 2
+            text_y = center_y - text_height // 2
+            
+            # For donut style, position text in center
+            # For arc/needle, position below center
+            if style == 'donut':
+                text_y = center_y - text_height // 2
+            else:
+                text_y = center_y + radius // 3
+            
+            draw.text((text_x, text_y), value_text, fill=text_color, font=value_font)
+        
+        # Draw component name if enabled
+        display_component_name = self.config.get('display_component_name', False)
+        if display_component_name:
+            component_name = get_component_name_for_data_source(data_source, data)
+            if component_name:
+                try:
+                    component_font = ImageFont.truetype("C:\\Windows\\Fonts\\arialbd.ttf", 10)
+                except:
+                    component_font = ImageFont.load_default()
+                
+                # Position component name below the gauge
+                comp_bbox = draw.textbbox((0, 0), component_name, font=component_font)
+                comp_width = comp_bbox[2] - comp_bbox[0]
+                comp_x = center_x - comp_width // 2
+                comp_y = y + height - 15
+                
+                draw.text((comp_x, comp_y), component_name, fill='#888888', font=component_font)
+
 
 class ImageWidget(Widget):
     """
@@ -821,6 +1137,8 @@ def create_widget(config):
         return ProgressBarWidget(config)
     elif widget_type == 'sparkline':
         return SparklineWidget(config)
+    elif widget_type == 'gauge':
+        return GaugeWidget(config)
     elif widget_type == 'image':
         return ImageWidget(config)
     else:

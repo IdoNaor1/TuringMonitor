@@ -11,11 +11,11 @@
       "type": "text",
       "id": "clock",
       "position": {
-        "x": 10,
-        "y": 20
+        "x": 13,
+        "y": 4
       },
       "size": {
-        "width": 300,
+        "width": 200,
         "height": 80
       },
       "data_source": "time",
@@ -31,8 +31,8 @@
       "type": "text",
       "id": "date",
       "position": {
-        "x": 10,
-        "y": 105
+        "x": 9,
+        "y": 73
       },
       "size": {
         "width": 300,
@@ -48,8 +48,8 @@
       "type": "progress_bar",
       "id": "cpu",
       "position": {
-        "x": 10,
-        "y": 150
+        "x": 12,
+        "y": 97
       },
       "size": {
         "width": 300,
@@ -73,8 +73,8 @@
       "type": "progress_bar",
       "id": "disk",
       "position": {
-        "x": 10,
-        "y": 265
+        "x": 6,
+        "y": 191
       },
       "size": {
         "width": 300,
@@ -98,11 +98,11 @@
       "type": "image",
       "id": "321",
       "position": {
-        "x": 10,
-        "y": 370
+        "x": 238,
+        "y": 15
       },
       "size": {
-        "width": 300,
+        "width": 80,
         "height": 80
       },
       "data_source": "time",
@@ -111,6 +111,20 @@
       "scale_mode": "fit",
       "opacity": 1.0,
       "rotation": 0
+    },
+    {
+      "type": "gauge",
+      "id": "123",
+      "position": {
+        "x": 51,
+        "y": 298
+      },
+      "size": {
+        "width": 150,
+        "height": 180
+      },
+      "data_source": "gpu_percent",
+      "update_interval": 1.0
     }
   ]
 }

@@ -219,7 +219,7 @@
         "y": 342
       },
       "size": {
-        "width": 60,
+        "width": 40,
         "height": 20
       },
       "data_source": "nvme_temp",
